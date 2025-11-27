@@ -121,12 +121,17 @@ export class MusicSubscription {
      */
     public enqueue(track: Track) {
         this.clearIdleTimer(); // Cancelar timer de inactividad
+
+        // Si la cola no está vacía, precargar la canción
+        // Si está vacía, es la que va a sonar YA, así que no gastamos tiempo precargando
+        if (this.queue.length > 0 || this.audioPlayer.state.status === AudioPlayerStatus.Playing) {
+            track.preload();
+            console.log(`[INFO] Pre-cargando (cola): ${track.title}`);
+        } else {
+            console.log(`[INFO] Reproducción inmediata (sin pre-carga): ${track.title}`);
+        }
+
         this.queue.push(track);
-
-        // Pre-cargar la canción automáticamente
-        track.preload();
-        console.log(`[INFO] Pre-cargando: ${track.title}`);
-
         this.processQueue();
     }
 
