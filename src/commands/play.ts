@@ -60,7 +60,7 @@ export async function execute(
                 interaction.followUp({ content: `Now playing!`, ephemeral: true }).catch(console.warn);
             },
             onFinish() {
-                interaction.followUp({ content: `Finished playing!`, ephemeral: true }).catch(console.warn);
+                // No-op
             },
             onError(error) {
                 console.warn(error);

@@ -20,6 +20,8 @@ export class Track {
     public readonly onStart: () => void;
     public readonly onFinish: () => void;
     public readonly onError: (error: Error) => void;
+    private cachedResource: AudioResource<Track> | null = null;
+    private isPreloading = false;
 
     private constructor({ url, title, onStart, onFinish, onError }: TrackData) {
         this.url = url;
@@ -30,17 +32,52 @@ export class Track {
     }
 
     /**
+     * Pre-loads the audio resource in the background.
+     */
+    public preload(): void {
+        if (this.cachedResource || this.isPreloading) {
+            return; // Already cached or currently loading
+        }
+
+        this.isPreloading = true;
+        console.log(`[DEBUG] Pre-loading audio resource for: ${this.title}`);
+
+        this.createAudioResource()
+            .then(resource => {
+                this.cachedResource = resource;
+                this.isPreloading = false;
+                console.log(`[DEBUG] Pre-loaded successfully: ${this.title}`);
+            })
+            .catch(error => {
+                this.isPreloading = false;
+                console.warn(`[DEBUG] Pre-load failed for ${this.title}:`, error.message);
+            });
+    }
+
+    /**
      * Creates an AudioResource from this Track.
      */
     public async createAudioResource(): Promise<AudioResource<Track>> {
+        // If we have a cached resource, return it immediately
+        if (this.cachedResource) {
+            console.log(`[DEBUG] Using cached audio resource for: ${this.title}`);
+            const resource = this.cachedResource;
+            this.cachedResource = null; // Clear cache after use
+            return resource;
+        }
+
         console.log(`[DEBUG] Creating audio resource for URL: ${this.url}`);
 
         return new Promise((resolve, reject) => {
             const process = spawn(ytDlpPath, [
-                '-f', 'bestaudio',
+                '-f', 'bestaudio[ext=webm]/bestaudio',
                 '-o', '-',
                 '-q', // quiet mode, but we can still capture stderr if needed
                 '--no-warnings',
+                '--no-playlist',
+                '--no-check-certificate',
+                '--prefer-free-formats',
+                '--buffer-size', '16K',
                 this.url
             ], {
                 stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr
@@ -54,7 +91,10 @@ export class Track {
             const stream = process.stdout;
 
             process.stderr?.on('data', (data) => {
-                console.warn(`[yt-dlp stderr]: ${data.toString()}`);
+                const message = data.toString();
+                if (!message.includes('Broken pipe')) {
+                    console.warn(`[yt-dlp stderr]: ${message}`);
+                }
             });
 
             const onError = (error: Error) => {

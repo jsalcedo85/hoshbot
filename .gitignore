@@ -137,3 +137,9 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# HoshBot specific
+bin/
+reference_bot*/
+test-*.js
+download-*.js
