@@ -1,6 +1,7 @@
 import { AudioResource, createAudioResource, demuxProbe } from '@discordjs/voice';
 import { spawn } from 'child_process';
 import YouTube from 'youtube-sr';
+import ytSearch from 'yt-search';
 import path from 'path';
 
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
@@ -115,8 +116,6 @@ export class Track {
                 '--no-check-certificate',
                 '--prefer-free-formats',
                 '--buffer-size', '16K',
-                '--no-mtime', // Don't read/write modification times
-                '--concurrent-fragments', '2', // Download fragments in parallel
                 ...extraArgs,
                 this.url
             ];
@@ -193,64 +192,78 @@ export class Track {
                 console.log(`[DEBUG] Buscando: ${url}`);
 
                 try {
-                    // Intento 1: youtube-sr
+                    // Intento 1: youtube-sr (Suele ser rápido)
                     const result = await YouTube.searchOne(url);
 
                     if (!result) {
-                        console.log('[WARN] youtube-sr no encontró resultados, usando yt-dlp...');
                         throw new Error('youtube-sr failed');
                     }
 
                     videoUrl = result.url;
                     title = result.title || 'Unknown Title';
-                    console.log(`[DEBUG] URL de video encontrada: ${videoUrl}`);
+                    console.log(`[DEBUG] Encontrado con youtube-sr: ${title}`);
 
-                    // Guardar en caché
                     Track.searchCache.set(url, { url: videoUrl, title });
                 } catch (error) {
-                    // Intento 2: Búsqueda con yt-dlp directamente (para Ubuntu Gnome)
-                    console.log('[INFO] Buscando con yt-dlp directamente...');
+                    console.warn('[WARN] youtube-sr falló, intentando con yt-search...');
 
-                    const searchQuery = `ytsearch1:${url}`;
+                    try {
+                        // Intento 2: yt-search (Muy rápido y ligero)
+                        const result = await ytSearch(url);
 
-                    // Try multiple strategies in order
-                    const strategies = [
-                        { name: 'chrome cookies', args: '--cookies-from-browser chrome' },
-                        { name: 'firefox cookies', args: '--cookies-from-browser firefox' },
-                        { name: 'no cookies', args: '' },
-                    ];
+                        if (result && result.videos.length > 0) {
+                            const video = result.videos[0];
+                            videoUrl = video.url;
+                            title = video.title;
+                            console.log(`[DEBUG] Encontrado con yt-search: ${title}`);
 
-                    let found = false;
-                    let lastError: Error | null = null;
-
-                    for (const strategy of strategies) {
-                        try {
-                            console.log(`[DEBUG] Intentando búsqueda con ${strategy.name}...`);
-                            const { stdout } = await execCommand(
-                                `${ytDlpPath} ${strategy.args} --get-title --get-id "${searchQuery}"`,
-                                { encoding: 'utf-8' }
-                            );
-
-                            const lines = stdout.trim().split('\n');
-                            if (lines.length >= 2) {
-                                title = lines[0];
-                                const videoId = lines[1];
-                                videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-                                console.log(`[DEBUG] Encontrado con yt-dlp (${strategy.name}): ${title} - ${videoUrl}`);
-                                found = true;
-
-                                // Guardar en caché
-                                Track.searchCache.set(url, { url: videoUrl, title });
-                                break; // Success!
-                            }
-                        } catch (error) {
-                            console.warn(`[DEBUG] Falló búsqueda con ${strategy.name}:`, (error as Error).message);
-                            lastError = error as Error;
+                            Track.searchCache.set(url, { url: videoUrl, title });
+                        } else {
+                            throw new Error('yt-search no results');
                         }
-                    }
+                    } catch (ytSearchError) {
+                        console.warn('[WARN] yt-search falló, usando yt-dlp (lento)...');
 
-                    if (!found) {
-                        throw lastError || new Error('No results found with any strategy');
+                        // Intento 3: Búsqueda con yt-dlp directamente (Último recurso)
+                        const searchQuery = `ytsearch1:${url}`;
+
+                        const strategies = [
+                            { name: 'chrome cookies', args: '--cookies-from-browser chrome' },
+                            { name: 'firefox cookies', args: '--cookies-from-browser firefox' },
+                            { name: 'no cookies', args: '' },
+                        ];
+
+                        let found = false;
+                        let lastError: Error | null = null;
+
+                        for (const strategy of strategies) {
+                            try {
+                                console.log(`[DEBUG] Intentando búsqueda con ${strategy.name}...`);
+                                // Agregamos --flat-playlist para que sea más rápido (solo metadatos)
+                                const { stdout } = await execCommand(
+                                    `${ytDlpPath} ${strategy.args} --flat-playlist --get-title --get-id "${searchQuery}"`,
+                                    { encoding: 'utf-8' }
+                                );
+
+                                const lines = stdout.trim().split('\n');
+                                if (lines.length >= 2) {
+                                    title = lines[0];
+                                    const videoId = lines[1];
+                                    videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                                    console.log(`[DEBUG] Encontrado con yt-dlp (${strategy.name}): ${title}`);
+                                    found = true;
+
+                                    Track.searchCache.set(url, { url: videoUrl, title });
+                                    break;
+                                }
+                            } catch (error) {
+                                lastError = error as Error;
+                            }
+                        }
+
+                        if (!found) {
+                            throw lastError || new Error('No results found with any strategy');
+                        }
                     }
                 }
             }
