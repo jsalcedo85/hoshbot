@@ -100,12 +100,6 @@ export class MusicSubscription {
                 // Cancelar timer de inactividad al reproducir
                 this.clearIdleTimer();
 
-                // Pre-cargar la siguiente pista en la cola para saltos instantáneos
-                if (this.queue.length > 0) {
-                    const nextTrack = this.queue[0];
-                    nextTrack.preload();
-                }
-
                 // Verificar si el bot está solo
                 this.checkIfAlone();
             }
@@ -126,6 +120,11 @@ export class MusicSubscription {
     public enqueue(track: Track) {
         this.clearIdleTimer(); // Cancelar timer de inactividad
         this.queue.push(track);
+
+        // Pre-cargar la canción automáticamente
+        track.preload();
+        console.log(`[INFO] Pre-cargando: ${track.title}`);
+
         this.processQueue();
     }
 
