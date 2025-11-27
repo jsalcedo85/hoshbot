@@ -133,6 +133,8 @@ export class MusicSubscription {
      */
     public stop() {
         this.queueLock = true;
+        // Clean up all tracks in queue
+        this.queue.forEach(track => track.destroy());
         this.queue = [];
         this.clearIdleTimer();
         if (this.aloneTimeout) {
