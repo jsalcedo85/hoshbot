@@ -78,6 +78,7 @@ export class Track {
                 '--no-check-certificate',
                 '--prefer-free-formats',
                 '--buffer-size', '16K',
+                '--cookies-from-browser', 'chrome',
                 this.url
             ], {
                 stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr
@@ -150,7 +151,7 @@ export class Track {
 
                 const searchQuery = `ytsearch1:${url}`;
                 const { stdout } = await execCommand(
-                    `${ytDlpPath} --get-title --get-id "${searchQuery}"`,
+                    `${ytDlpPath} --cookies-from-browser chrome --get-title --get-id "${searchQuery}"`,
                     { encoding: 'utf-8' }
                 );
 
