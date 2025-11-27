@@ -64,7 +64,7 @@ export async function execute(
             },
             onError(error) {
                 console.warn(error);
-                interaction.followUp({ content: `Error: ${error.message}`, ephemeral: true }).catch(console.warn);
+                interaction.followUp({ content: `❌ Error: ${error.message}`, ephemeral: true }).catch(console.warn);
             },
         });
 
@@ -72,7 +72,8 @@ export async function execute(
         subscription.enqueue(track);
         await interaction.followUp(`🎵 Añadido a la cola: **${track.title}**`);
     } catch (error) {
-        console.warn(error);
-        await interaction.followUp('¡No se pudo reproducir la pista, intenta más tarde!');
+        console.error('[ERROR] Track creation failed:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+        await interaction.followUp(`❌ No se pudo reproducir la pista: ${errorMessage}`);
     }
 }

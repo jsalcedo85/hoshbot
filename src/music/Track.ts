@@ -70,7 +70,9 @@ export class Track {
 
         return new Promise((resolve, reject) => {
             const process = spawn(ytDlpPath, [
-                '-f', 'bestaudio[ext=webm]/bestaudio',
+                '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+                '--extract-audio',
+                '--format-sort', 'acodec:opus,acodec:aac',
                 '-o', '-',
                 '-q', // quiet mode, but we can still capture stderr if needed
                 '--no-warnings',
@@ -78,7 +80,6 @@ export class Track {
                 '--no-check-certificate',
                 '--prefer-free-formats',
                 '--buffer-size', '16K',
-                '--cookies-from-browser', 'chrome',
                 this.url
             ], {
                 stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr
@@ -151,7 +152,7 @@ export class Track {
 
                 const searchQuery = `ytsearch1:${url}`;
                 const { stdout } = await execCommand(
-                    `${ytDlpPath} --cookies-from-browser chrome --get-title --get-id "${searchQuery}"`,
+                    `${ytDlpPath} --get-title --get-id "${searchQuery}"`,
                     { encoding: 'utf-8' }
                 );
 

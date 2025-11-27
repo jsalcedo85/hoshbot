@@ -168,6 +168,7 @@ export class MusicSubscription {
             this.queueLock = false;
         } catch (error) {
             // If an error occurred, try the next item of the queue instead
+            console.error(`[ERROR] Failed to play track: ${nextTrack.title} (${nextTrack.url})`, error);
             nextTrack.onError(error as Error);
             this.queueLock = false;
             return this.processQueue();
