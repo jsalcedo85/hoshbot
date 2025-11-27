@@ -68,21 +68,49 @@ export class Track {
 
         console.log(`[DEBUG] Creando recurso de audio para URL: ${this.url}`);
 
+        // Try multiple strategies in order
+        const strategies = [
+            { name: 'chrome cookies', args: ['--cookies-from-browser', 'chrome'] },
+            { name: 'firefox cookies', args: ['--cookies-from-browser', 'firefox'] },
+            { name: 'no cookies', args: [] },
+        ];
+
+        for (const strategy of strategies) {
+            try {
+                console.log(`[DEBUG] Intentando con ${strategy.name}...`);
+                return await this.tryCreateResource(strategy.args);
+            } catch (error) {
+                console.warn(`[DEBUG] Falló con ${strategy.name}:`, (error as Error).message);
+                // Continue to next strategy
+            }
+        }
+
+        // If all strategies failed, throw the last error
+        throw new Error('Failed to create audio resource with all strategies');
+    }
+
+    /**
+     * Attempts to create an audio resource with specific yt-dlp arguments.
+     */
+    private async tryCreateResource(extraArgs: string[]): Promise<AudioResource<Track>> {
         return new Promise((resolve, reject) => {
-            const process = spawn(ytDlpPath, [
+            const args = [
                 '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
                 '--extract-audio',
                 '--format-sort', 'acodec:opus,acodec:aac',
                 '-o', '-',
-                '-q', // quiet mode, but we can still capture stderr if needed
+                '-q',
                 '--no-warnings',
                 '--no-playlist',
                 '--no-check-certificate',
                 '--prefer-free-formats',
                 '--buffer-size', '16K',
+                ...extraArgs,
                 this.url
-            ], {
-                stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr
+            ];
+
+            const process = spawn(ytDlpPath, args, {
+                stdio: ['ignore', 'pipe', 'pipe']
             });
 
             if (!process.stdout) {
@@ -91,9 +119,11 @@ export class Track {
             }
 
             const stream = process.stdout;
+            let stderrOutput = '';
 
             process.stderr?.on('data', (data) => {
                 const message = data.toString();
+                stderrOutput += message;
                 if (!message.includes('Broken pipe')) {
                     console.warn(`[yt-dlp stderr]: ${message}`);
                 }
@@ -102,7 +132,13 @@ export class Track {
             const onError = (error: Error) => {
                 if (!process.killed) process.kill();
                 stream.resume();
-                reject(error);
+
+                // Check if error is due to bot detection
+                if (stderrOutput.includes('Sign in to confirm') || stderrOutput.includes('not a bot')) {
+                    reject(new Error('YouTube bot detection - trying next strategy'));
+                } else {
+                    reject(error);
+                }
             };
 
             process.once('spawn', () => {
@@ -151,19 +187,42 @@ export class Track {
                 console.log('[INFO] Buscando con yt-dlp directamente...');
 
                 const searchQuery = `ytsearch1:${url}`;
-                const { stdout } = await execCommand(
-                    `${ytDlpPath} --get-title --get-id "${searchQuery}"`,
-                    { encoding: 'utf-8' }
-                );
 
-                const lines = stdout.trim().split('\n');
-                if (lines.length >= 2) {
-                    title = lines[0];
-                    const videoId = lines[1];
-                    videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-                    console.log(`[DEBUG] Encontrado con yt-dlp: ${title} - ${videoUrl}`);
-                } else {
-                    throw new Error('No results found');
+                // Try multiple strategies in order
+                const strategies = [
+                    { name: 'chrome cookies', args: '--cookies-from-browser chrome' },
+                    { name: 'firefox cookies', args: '--cookies-from-browser firefox' },
+                    { name: 'no cookies', args: '' },
+                ];
+
+                let found = false;
+                let lastError: Error | null = null;
+
+                for (const strategy of strategies) {
+                    try {
+                        console.log(`[DEBUG] Intentando búsqueda con ${strategy.name}...`);
+                        const { stdout } = await execCommand(
+                            `${ytDlpPath} ${strategy.args} --get-title --get-id "${searchQuery}"`,
+                            { encoding: 'utf-8' }
+                        );
+
+                        const lines = stdout.trim().split('\n');
+                        if (lines.length >= 2) {
+                            title = lines[0];
+                            const videoId = lines[1];
+                            videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                            console.log(`[DEBUG] Encontrado con yt-dlp (${strategy.name}): ${title} - ${videoUrl}`);
+                            found = true;
+                            break; // Success!
+                        }
+                    } catch (error) {
+                        console.warn(`[DEBUG] Falló búsqueda con ${strategy.name}:`, (error as Error).message);
+                        lastError = error as Error;
+                    }
+                }
+
+                if (!found) {
+                    throw lastError || new Error('No results found with any strategy');
                 }
             }
         } else {
