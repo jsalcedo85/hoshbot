@@ -24,7 +24,6 @@ export class MusicSubscription {
     public queueLock = false;
     public readyLock = false;
     private idleTimeout: NodeJS.Timeout | null = null;
-    private aloneTimeout: NodeJS.Timeout | null = null;
     private readonly IDLE_TIME = 2 * 60 * 1000; // 2 minutos
 
     public constructor(voiceConnection: VoiceConnection) {
@@ -92,6 +91,10 @@ export class MusicSubscription {
                 // If the Idle state is entered from a non-Idle state, it means that an audio resource has finished playing.
                 // The queue is then processed to start playing the next track.
                 (oldState.resource as AudioResource<Track>).metadata.onFinish();
+
+                // CLEANUP: Destroy the finished track to free resources immediately
+                (oldState.resource as AudioResource<Track>).metadata.destroy();
+
                 this.processQueue();
             } else if (newState.status === AudioPlayerStatus.Playing) {
                 // Si el estado Playing se alcanzó, entonces una nueva pista ha comenzado a reproducirse.
@@ -99,14 +102,13 @@ export class MusicSubscription {
 
                 // Cancelar timer de inactividad al reproducir
                 this.clearIdleTimer();
-
-                // Verificar si el bot está solo
-                this.checkIfAlone();
             }
         });
 
         this.audioPlayer.on('error', (error) => {
             (error.resource as AudioResource<Track>).metadata.onError(error);
+            // CLEANUP on error too
+            (error.resource as AudioResource<Track>).metadata.destroy();
         });
 
         voiceConnection.subscribe(this.audioPlayer);
@@ -137,10 +139,6 @@ export class MusicSubscription {
         this.queue.forEach(track => track.destroy());
         this.queue = [];
         this.clearIdleTimer();
-        if (this.aloneTimeout) {
-            clearTimeout(this.aloneTimeout);
-            this.aloneTimeout = null;
-        }
         this.audioPlayer.stop(true);
     }
 
@@ -172,6 +170,7 @@ export class MusicSubscription {
             // If an error occurred, try the next item of the queue instead
             console.error(`[ERROR] Failed to play track: ${nextTrack.title} (${nextTrack.url})`, error);
             nextTrack.onError(error as Error);
+            nextTrack.destroy(); // Cleanup failed track
             this.queueLock = false;
             return this.processQueue();
         }
@@ -195,30 +194,6 @@ export class MusicSubscription {
 
         this.idleTimeout = setTimeout(() => {
             console.log('[INFO] Desconectando por inactividad (2 minutos sin música)');
-            this.voiceConnection.destroy();
-        }, this.IDLE_TIME);
-    }
-
-    /**
-     * Verifica si el bot está solo en el canal de voz y maneja la desconexión automática.
-     */
-    private checkIfAlone(): void {
-        const channel = this.voiceConnection.joinConfig.channelId;
-        if (!channel) return;
-
-        // Limpiar timeout anterior
-        if (this.aloneTimeout) {
-            clearTimeout(this.aloneTimeout);
-            this.aloneTimeout = null;
-        }
-
-        // Obtener información del canal desde el adaptador
-        const guild = (this.voiceConnection as any).packets?.state?.guild_id;
-        if (!guild) return;
-
-        // Iniciar timer de soledad
-        this.aloneTimeout = setTimeout(() => {
-            console.log('[INFO] Desconectando porque el bot está solo en el canal de voz');
             this.voiceConnection.destroy();
         }, this.IDLE_TIME);
     }
