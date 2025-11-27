@@ -127,28 +127,78 @@ export class Track {
         let videoUrl = url;
         let title = 'Unknown Title';
 
+        const noop = () => { };
+
         if (!url.startsWith('http')) {
             console.log(`[DEBUG] Buscando: ${url}`);
-            const searchResults = await YouTube.searchOne(url);
-            if (!searchResults) {
-                throw new Error('No results found');
-            }
-            videoUrl = searchResults.url;
-            title = searchResults.title || 'Unknown Title';
-            console.log(`[DEBUG] URL de video encontrada: ${videoUrl}`);
-        } else {
+
             try {
-                const video = await YouTube.getVideo(url);
-                title = video.title || 'Unknown Title';
-            } catch (e) {
-                console.warn('Failed to fetch video details:', e);
+                // Intento 1: youtube-sr
+                const result = await YouTube.searchOne(url);
+
+                if (!result) {
+                    console.log('[WARN] youtube-sr no encontró resultados, usando yt-dlp...');
+                    throw new Error('youtube-sr failed');
+                }
+
+                videoUrl = result.url;
+                title = result.title || 'Unknown Title';
+                console.log(`[DEBUG] URL de video encontrada: ${videoUrl}`);
+            } catch (error) {
+                // Intento 2: Búsqueda con yt-dlp directamente (para Ubuntu Gnome)
+                console.log('[INFO] Buscando con yt-dlp directamente...');
+
+                const searchQuery = `ytsearch1:${url}`;
+                const { stdout } = await execCommand(
+                    `${ytDlpPath} --get-title --get-id "${searchQuery}"`,
+                    { encoding: 'utf-8' }
+                );
+
+                const lines = stdout.trim().split('\n');
+                if (lines.length >= 2) {
+                    title = lines[0];
+                    const videoId = lines[1];
+                    videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                    console.log(`[DEBUG] Encontrado con yt-dlp: ${title} - ${videoUrl}`);
+                } else {
+                    throw new Error('No results found');
+                }
             }
+        } else {
+            videoUrl = url;
         }
 
+        const wrappedMethods = {
+            onStart() {
+                wrappedMethods.onStart = noop;
+                methods.onStart();
+            },
+            onFinish() {
+                wrappedMethods.onFinish = noop;
+                methods.onFinish();
+            },
+            onError(error: Error) {
+                wrappedMethods.onError = noop;
+                methods.onError(error);
+            },
+        };
+
         return new Track({
-            title,
             url: videoUrl,
-            ...methods,
+            title,
+            ...wrappedMethods,
         });
     }
+}
+
+function execCommand(command: string, options: any): Promise<{ stdout: string }> {
+    return new Promise((resolve, reject) => {
+        require('child_process').exec(command, options, (error: Error | null, stdout: string, stderr: string) => {
+            if (error) {
+                reject(error);
+            } else {
+                resolve({ stdout });
+            }
+        });
+    });
 }
