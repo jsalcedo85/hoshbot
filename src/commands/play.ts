@@ -2,7 +2,7 @@ import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder } from 'd
 import { joinVoiceChannel, entersState, VoiceConnectionStatus } from '@discordjs/voice';
 import { Track } from '../music/Track';
 import { MusicSubscription } from '../music/Subscription';
-import play from 'play-dl';
+
 
 export const data = new SlashCommandBuilder()
     .setName('play')
@@ -11,13 +11,15 @@ export const data = new SlashCommandBuilder()
         option.setName('query').setDescription('The URL or search query').setRequired(true),
     );
 
+import { BotClient } from '../structures/BotClient';
+
 export async function execute(
     interaction: ChatInputCommandInteraction,
-    subscriptions: Map<string, MusicSubscription>,
+    client: BotClient,
 ) {
     await interaction.deferReply();
 
-    let subscription = subscriptions.get(interaction.guildId!);
+    let subscription = client.subscriptions.get(interaction.guildId!);
     const query = interaction.options.getString('query')!;
 
     // If there is no subscription, create one
@@ -27,12 +29,12 @@ export async function execute(
             const connection = joinVoiceChannel({
                 channelId: channel.id,
                 guildId: channel.guild.id,
-                adapterCreator: channel.guild.voiceAdapterCreator,
+                adapterCreator: channel.guild.voiceAdapterCreator as any,
             });
 
             subscription = new MusicSubscription(connection);
             subscription.voiceConnection.on('error', console.warn);
-            subscriptions.set(interaction.guildId!, subscription);
+            client.subscriptions.set(interaction.guildId!, subscription);
         }
     }
 

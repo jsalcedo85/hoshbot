@@ -1,5 +1,9 @@
 import { AudioResource, createAudioResource, demuxProbe } from '@discordjs/voice';
-import play from 'play-dl';
+import { spawn } from 'child_process';
+import YouTube from 'youtube-sr';
+import path from 'path';
+
+const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
 
 export interface TrackData {
     url: string;
@@ -29,11 +33,50 @@ export class Track {
      * Creates an AudioResource from this Track.
      */
     public async createAudioResource(): Promise<AudioResource<Track>> {
-        const stream = await play.stream(this.url);
+        console.log(`[DEBUG] Creating audio resource for URL: ${this.url}`);
 
-        return createAudioResource(stream.stream, {
-            inputType: stream.type,
-            metadata: this,
+        return new Promise((resolve, reject) => {
+            const process = spawn(ytDlpPath, [
+                '-f', 'bestaudio',
+                '-o', '-',
+                '-q', // quiet mode, but we can still capture stderr if needed
+                '--no-warnings',
+                this.url
+            ], {
+                stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr
+            });
+
+            if (!process.stdout) {
+                reject(new Error('No stdout from yt-dlp process'));
+                return;
+            }
+
+            const stream = process.stdout;
+
+            process.stderr?.on('data', (data) => {
+                console.warn(`[yt-dlp stderr]: ${data.toString()}`);
+            });
+
+            const onError = (error: Error) => {
+                if (!process.killed) process.kill();
+                stream.resume();
+                reject(error);
+            };
+
+            process.once('spawn', () => {
+                demuxProbe(stream)
+                    .then((probe) => {
+                        resolve(
+                            createAudioResource(probe.stream, {
+                                inputType: probe.type,
+                                metadata: this,
+                            }),
+                        );
+                    })
+                    .catch(onError);
+            });
+
+            process.on('error', onError);
         });
     }
 
@@ -41,11 +84,30 @@ export class Track {
      * Creates a Track from a video URL and lifecycle callbacks.
      */
     public static async from(url: string, methods: Pick<TrackData, 'onStart' | 'onFinish' | 'onError'>): Promise<Track> {
-        const info = await play.video_basic_info(url);
+        let videoUrl = url;
+        let title = 'Unknown Title';
+
+        if (!url.startsWith('http')) {
+            console.log(`[DEBUG] Searching for: ${url}`);
+            const searchResults = await YouTube.searchOne(url);
+            if (!searchResults) {
+                throw new Error('No results found');
+            }
+            videoUrl = searchResults.url;
+            title = searchResults.title || 'Unknown Title';
+            console.log(`[DEBUG] Found video URL: ${videoUrl}`);
+        } else {
+            try {
+                const video = await YouTube.getVideo(url);
+                title = video.title || 'Unknown Title';
+            } catch (e) {
+                console.warn('Failed to fetch video details:', e);
+            }
+        }
 
         return new Track({
-            title: info.video_details.title || 'Unknown Title',
-            url,
+            title,
+            url: videoUrl,
             ...methods,
         });
     }

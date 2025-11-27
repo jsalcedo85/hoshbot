@@ -1,3 +1,4 @@
 #!/bin/bash
-export PATH="/usr/local/Cellar/node/25.2.1/bin:$PATH"
-npm run dev
+export PATH=/Users/josh/.nvm/versions/node/v24.11.1/bin:$PATH
+echo "Starting HoshBot with Node $(node -v)..."
+npm run start
