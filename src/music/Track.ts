@@ -88,43 +88,28 @@ export class Track {
             { name: 'no cookies', args: [] },
         ];
 
-        // Formats to try in order of preference
-        const formats = [
-            'bestaudio',
-            'bestaudio[ext=webm]',
-            'bestaudio[ext=m4a]',
-            'best' // Fallback to video+audio if audio-only fails
-        ];
-
         for (const strategy of strategies) {
-            for (const format of formats) {
-                try {
-                    console.log(`[DEBUG] Intentando con ${strategy.name} y formato ${format}...`);
-                    return await this.tryCreateResource(strategy.args, format);
-                } catch (error) {
-                    const msg = (error as Error).message;
-                    console.warn(`[DEBUG] Falló con ${strategy.name} (${format}):`, msg);
-
-                    // If it's a bot detection error, break the inner loop to try next cookie strategy immediately
-                    if (msg.includes('YouTube bot detection')) {
-                        break;
-                    }
-                    // Otherwise continue to next format
-                }
+            try {
+                console.log(`[DEBUG] Intentando con ${strategy.name}...`);
+                // Use 'bestaudio/best' to let yt-dlp decide the best format
+                return await this.tryCreateResource(strategy.args);
+            } catch (error) {
+                console.warn(`[DEBUG] Falló con ${strategy.name}:`, (error as Error).message);
+                // Continue to next strategy
             }
         }
 
         // If all strategies failed, throw the last error
-        throw new Error('Failed to create audio resource with all strategies and formats');
+        throw new Error('Failed to create audio resource with all strategies');
     }
 
     /**
      * Attempts to create an audio resource with specific yt-dlp arguments.
      */
-    private async tryCreateResource(extraArgs: string[], format: string): Promise<AudioResource<Track>> {
+    private async tryCreateResource(extraArgs: string[]): Promise<AudioResource<Track>> {
         return new Promise((resolve, reject) => {
             const args = [
-                '-f', format,
+                '-f', 'bestaudio/best', // Let yt-dlp decide: best audio or best video+audio
                 '-o', '-',
                 '-q',
                 '--no-warnings',
