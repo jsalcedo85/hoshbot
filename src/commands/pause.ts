@@ -3,15 +3,15 @@ import { BotClient } from '../structures/BotClient';
 
 export const data = new SlashCommandBuilder()
     .setName('pause')
-    .setDescription('Pauses the music');
+    .setDescription('Pausa la música');
 
 export async function execute(interaction: ChatInputCommandInteraction, client: BotClient) {
     const subscription = client.subscriptions.get(interaction.guildId!);
 
     if (subscription) {
         subscription.audioPlayer.pause();
-        await interaction.reply({ content: 'Paused!', ephemeral: true });
+        await interaction.reply({ content: '⏸️ ¡Pausado!', ephemeral: true });
     } else {
-        await interaction.reply({ content: 'Not playing in this server!', ephemeral: true });
+        await interaction.reply({ content: '¡No estoy reproduciendo nada en este servidor!', ephemeral: true });
     }
 }

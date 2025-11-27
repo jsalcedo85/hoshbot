@@ -5,7 +5,7 @@ import { Track } from '../music/Track';
 
 export const data = new SlashCommandBuilder()
     .setName('queue')
-    .setDescription('See the music queue');
+    .setDescription('Ver la cola de música');
 
 export async function execute(interaction: ChatInputCommandInteraction, client: BotClient) {
     const subscription = client.subscriptions.get(interaction.guildId!);
@@ -18,11 +18,11 @@ export async function execute(interaction: ChatInputCommandInteraction, client: 
 
         const queue = subscription.queue
             .slice(0, 5)
-            .map((track, index) => `${index + 1}) ${track.title}`)
+            .map((track, index) => `${index + 1}. ${track.title}`)
             .join('\n');
 
-        await interaction.reply(`${current ? `**Playing:** ${current.metadata.title}` : '**Nothing Playing**'}\n\n**Queue:**\n${queue}`);
+        await interaction.reply(`${current ? `🎵 **Reproduciendo:** ${current.metadata.title}` : '⏸️ **Nada reproduciéndose**'}\n\n📋 **Cola:**\n${queue || 'Vacía'}`);
     } else {
-        await interaction.reply('Not playing in this server!');
+        await interaction.reply('¡No estoy reproduciendo nada en este servidor!');
     }
 }

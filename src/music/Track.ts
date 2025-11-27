@@ -13,7 +13,7 @@ export interface TrackData {
     onError: (error: Error) => void;
 }
 
-// Helper to wrap logic for creating a Track from a video URL
+// Clase auxiliar para envolver la lógica de crear una Pista desde una URL de video
 export class Track {
     public readonly url: string;
     public readonly title: string;
@@ -40,17 +40,17 @@ export class Track {
         }
 
         this.isPreloading = true;
-        console.log(`[DEBUG] Pre-loading audio resource for: ${this.title}`);
+        console.log(`[DEBUG] Pre-cargando recurso de audio para: ${this.title}`);
 
         this.createAudioResource()
             .then(resource => {
                 this.cachedResource = resource;
                 this.isPreloading = false;
-                console.log(`[DEBUG] Pre-loaded successfully: ${this.title}`);
+                console.log(`[DEBUG] Pre-carga exitosa: ${this.title}`);
             })
             .catch(error => {
                 this.isPreloading = false;
-                console.warn(`[DEBUG] Pre-load failed for ${this.title}:`, error.message);
+                console.warn(`[DEBUG] Fallo en pre-carga para ${this.title}:`, error.message);
             });
     }
 
@@ -60,13 +60,13 @@ export class Track {
     public async createAudioResource(): Promise<AudioResource<Track>> {
         // If we have a cached resource, return it immediately
         if (this.cachedResource) {
-            console.log(`[DEBUG] Using cached audio resource for: ${this.title}`);
+            console.log(`[DEBUG] Usando recurso en caché para: ${this.title}`);
             const resource = this.cachedResource;
             this.cachedResource = null; // Clear cache after use
             return resource;
         }
 
-        console.log(`[DEBUG] Creating audio resource for URL: ${this.url}`);
+        console.log(`[DEBUG] Creando recurso de audio para URL: ${this.url}`);
 
         return new Promise((resolve, reject) => {
             const process = spawn(ytDlpPath, [
@@ -128,14 +128,14 @@ export class Track {
         let title = 'Unknown Title';
 
         if (!url.startsWith('http')) {
-            console.log(`[DEBUG] Searching for: ${url}`);
+            console.log(`[DEBUG] Buscando: ${url}`);
             const searchResults = await YouTube.searchOne(url);
             if (!searchResults) {
                 throw new Error('No results found');
             }
             videoUrl = searchResults.url;
             title = searchResults.title || 'Unknown Title';
-            console.log(`[DEBUG] Found video URL: ${videoUrl}`);
+            console.log(`[DEBUG] URL de video encontrada: ${videoUrl}`);
         } else {
             try {
                 const video = await YouTube.getVideo(url);

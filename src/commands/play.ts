@@ -6,9 +6,9 @@ import { MusicSubscription } from '../music/Subscription';
 
 export const data = new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Plays a song from YouTube or Spotify')
+    .setDescription('Reproduce una canción de YouTube o Spotify')
     .addStringOption((option) =>
-        option.setName('query').setDescription('The URL or search query').setRequired(true),
+        option.setName('cancion').setDescription('URL o término de búsqueda').setRequired(true),
     );
 
 import { BotClient } from '../structures/BotClient';
@@ -20,9 +20,9 @@ export async function execute(
     await interaction.deferReply();
 
     let subscription = client.subscriptions.get(interaction.guildId!);
-    const query = interaction.options.getString('query')!;
+    const query = interaction.options.getString('cancion')!;
 
-    // If there is no subscription, create one
+    // Si no hay suscripción, crear una
     if (!subscription) {
         if (interaction.member instanceof GuildMember && interaction.member.voice.channel) {
             const channel = interaction.member.voice.channel;
@@ -38,26 +38,26 @@ export async function execute(
         }
     }
 
-    // If there is no subscription, tell the user they need to join a channel
+    // Si no hay suscripción, indicar al usuario que se una a un canal
     if (!subscription) {
-        await interaction.followUp('Join a voice channel and then try that again!');
+        await interaction.followUp('¡Únete a un canal de voz e intenta de nuevo!');
         return;
     }
 
-    // Make sure the connection is ready before processing the user's request
+    // Asegurar que la conexión esté lista antes de procesar la solicitud
     try {
         await entersState(subscription.voiceConnection, VoiceConnectionStatus.Ready, 20_000);
     } catch (error) {
         console.warn(error);
-        await interaction.followUp('Failed to join voice channel within 20 seconds, please try again later!');
+        await interaction.followUp('¡No se pudo conectar al canal de voz en 20 segundos, intenta más tarde!');
         return;
     }
 
     try {
-        // Attempt to create a Track from the user's video URL
+        // Intentar crear una pista desde la URL o búsqueda del usuario
         const track = await Track.from(query, {
             onStart() {
-                interaction.followUp({ content: `Now playing!`, ephemeral: true }).catch(console.warn);
+                interaction.followUp({ content: `¡Ahora reproduciendo!`, ephemeral: true }).catch(console.warn);
             },
             onFinish() {
                 // No-op
@@ -68,11 +68,11 @@ export async function execute(
             },
         });
 
-        // Enqueue the track and reply a success message to the user
+        // Agregar pista a la cola y notificar al usuario
         subscription.enqueue(track);
-        await interaction.followUp(`Enqueued **${track.title}**`);
+        await interaction.followUp(`🎵 Añadido a la cola: **${track.title}**`);
     } catch (error) {
         console.warn(error);
-        await interaction.followUp('Failed to play track, please try again later!');
+        await interaction.followUp('¡No se pudo reproducir la pista, intenta más tarde!');
     }
 }
