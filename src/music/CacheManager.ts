@@ -1,10 +1,11 @@
 import fs from 'fs/promises';
+import { createWriteStream } from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { spawn } from 'child_process';
+import axios from 'axios';
 import { CACHE_CONFIG } from '../config/cache.config';
 
-const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
+const COBALT_API_URL = 'https://api.cobalt.tools/';
 
 interface TrackMetadata {
     hash: string;
@@ -104,33 +105,55 @@ export class CacheManager {
     }
 
     /**
-     * Download track as MP3 and save to cache
+     * Download track as MP3 using Cobalt API and save to cache
      */
     public async downloadTrack(videoUrl: string, title: string): Promise<string> {
         const hash = this.hashUrl(videoUrl);
         const filePath = path.join(this.tracksDir, `${hash}.mp3`);
 
-        console.log(`[Cache] Downloading track: ${title}`);
+        console.log(`[Cache] Downloading track via Cobalt API: ${title}`);
 
-        return new Promise((resolve, reject) => {
-            const process = spawn(ytDlpPath, [
-                '-x', // Extract audio
-                '--audio-format', 'mp3',
-                '--audio-quality', '0', // Best quality
-                '-o', filePath,
-                '--no-playlist',
-                '--no-check-certificate',
-                videoUrl
-            ]);
-
-            let errorOutput = '';
-
-            process.stderr?.on('data', (data) => {
-                errorOutput += data.toString();
+        try {
+            // Step 1: Request download URL from Cobalt API
+            const cobaltResponse = await axios.post(COBALT_API_URL, {
+                url: videoUrl,
+                downloadMode: 'audio',
+                audioFormat: 'mp3',
+                audioBitrate: '128',
+                filenameStyle: 'basic'
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000 // 30 second timeout
             });
 
-            process.on('close', async (code) => {
-                if (code === 0) {
+            // Check if Cobalt returned success
+            if (cobaltResponse.data.status !== 'success' && cobaltResponse.data.status !== 'stream') {
+                throw new Error(`Cobalt API error: ${cobaltResponse.data.text || 'Unknown error'}`);
+            }
+
+            // Get download URL from response
+            const downloadUrl = cobaltResponse.data.url;
+            if (!downloadUrl) {
+                throw new Error('No download URL received from Cobalt API');
+            }
+
+            console.log(`[Cache] Cobalt API response received, downloading audio...`);
+
+            // Step 2: Download the audio file from the URL
+            const audioResponse = await axios.get(downloadUrl, {
+                responseType: 'stream',
+                timeout: 60000 // 60 second timeout for download
+            });
+
+            // Step 3: Save to file
+            const writer = createWriteStream(filePath);
+            audioResponse.data.pipe(writer);
+
+            return new Promise((resolve, reject) => {
+                writer.on('finish', async () => {
                     try {
                         // Get file size
                         const stats = await fs.stat(filePath);
@@ -158,16 +181,22 @@ export class CacheManager {
                     } catch (error) {
                         reject(error);
                     }
-                } else {
-                    console.error(`[Cache] Download failed: ${errorOutput}`);
-                    reject(new Error(`yt-dlp exited with code ${code}`));
-                }
-            });
+                });
 
-            process.on('error', (error) => {
-                reject(error);
+                writer.on('error', (error) => {
+                    console.error(`[Cache] File write error:`, error);
+                    reject(error);
+                });
+
+                audioResponse.data.on('error', (error: Error) => {
+                    console.error(`[Cache] Download stream error:`, error);
+                    reject(error);
+                });
             });
-        });
+        } catch (error: any) {
+            console.error(`[Cache] Cobalt API download failed:`, error.message);
+            throw new Error(`Failed to download via Cobalt API: ${error.message}`);
+        }
     }
 
     /**
