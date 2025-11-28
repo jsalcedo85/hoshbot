@@ -129,23 +129,30 @@ export class CacheManager {
                 timeout: 30000 // 30 second timeout
             });
 
-            // Check if Cobalt returned success
-            if (cobaltResponse.data.status !== 'success' && cobaltResponse.data.status !== 'stream') {
+            // Check response status
+            const { status, url: downloadUrl } = cobaltResponse.data;
+
+            if (status === 'error') {
                 throw new Error(`Cobalt API error: ${cobaltResponse.data.text || 'Unknown error'}`);
             }
 
-            // Get download URL from response
-            const downloadUrl = cobaltResponse.data.url;
+            if (status !== 'tunnel' && status !== 'redirect') {
+                throw new Error(`Unexpected Cobalt response status: ${status}`);
+            }
+
             if (!downloadUrl) {
                 throw new Error('No download URL received from Cobalt API');
             }
 
-            console.log(`[Cache] Cobalt API response received, downloading audio...`);
+            console.log(`[Cache] Cobalt API response received (${status}), downloading audio...`);
 
             // Step 2: Download the audio file from the URL
             const audioResponse = await axios.get(downloadUrl, {
                 responseType: 'stream',
-                timeout: 60000 // 60 second timeout for download
+                timeout: 60000, // 60 second timeout for download
+                headers: {
+                    'User-Agent': 'HoshBot/1.0'
+                }
             });
 
             // Step 3: Save to file
