@@ -2,6 +2,8 @@ import { AudioResource, createAudioResource, demuxProbe } from '@discordjs/voice
 import { spawn } from 'child_process';
 import YouTube from 'youtube-sr';
 import path from 'path';
+import { cacheManager } from './CacheManager';
+import { createReadStream } from 'fs';
 
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
 
@@ -66,13 +68,68 @@ export class Track {
             return resource;
         }
 
-        console.log(`[DEBUG] Creando recurso de audio para URL: ${this.url}`);
+        // Check if track exists in local cache
+        const cachedPath = await cacheManager.getCachedTrack(this.url);
+
+        if (cachedPath) {
+            // Use cached file
+            console.log(`[Cache] Playing from cache: ${this.title}`);
+            return new Promise((resolve, reject) => {
+                const stream = createReadStream(cachedPath);
+
+                demuxProbe(stream)
+                    .then((probe) => {
+                        resolve(
+                            createAudioResource(probe.stream, {
+                                inputType: probe.type,
+                                metadata: this,
+                            }),
+                        );
+                    })
+                    .catch(reject);
+            });
+        }
+
+        // Track not in cache, download it first
+        console.log(`[Cache] Track not in cache, downloading: ${this.title}`);
+
+        try {
+            const downloadedPath = await cacheManager.downloadTrack(this.url, this.title);
+
+            // Now play from the downloaded file
+            return new Promise((resolve, reject) => {
+                const stream = createReadStream(downloadedPath);
+
+                demuxProbe(stream)
+                    .then((probe) => {
+                        resolve(
+                            createAudioResource(probe.stream, {
+                                inputType: probe.type,
+                                metadata: this,
+                            }),
+                        );
+                    })
+                    .catch(reject);
+            });
+        } catch (error) {
+            console.error('[Cache] Download failed, falling back to streaming:', error);
+
+            // Fallback to streaming if download fails
+            return this.createStreamingResource();
+        }
+    }
+
+    /**
+     * Creates a streaming audio resource (fallback method)
+     */
+    private async createStreamingResource(): Promise<AudioResource<Track>> {
+        console.log(`[DEBUG] Streaming audio para URL: ${this.url}`);
 
         return new Promise((resolve, reject) => {
             const process = spawn(ytDlpPath, [
                 '-f', 'bestaudio[ext=webm]/bestaudio',
                 '-o', '-',
-                '-q', // quiet mode, but we can still capture stderr if needed
+                '-q',
                 '--no-warnings',
                 '--no-playlist',
                 '--no-check-certificate',
@@ -80,7 +137,7 @@ export class Track {
                 '--buffer-size', '16K',
                 this.url
             ], {
-                stdio: ['ignore', 'pipe', 'pipe'] // Capture stderr
+                stdio: ['ignore', 'pipe', 'pipe']
             });
 
             if (!process.stdout) {

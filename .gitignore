@@ -143,3 +143,5 @@ bin/
 reference_bot*/
 test-*.js
 download-*.js
+music-cache/
+package-lock.json
