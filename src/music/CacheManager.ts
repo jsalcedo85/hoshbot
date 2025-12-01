@@ -331,9 +331,10 @@ export class CacheManager {
         const metadata = await this.loadMetadata();
         let tracks = Object.values(metadata.tracks);
         const BATCH_SIZE = 10;
+        let currentSizeCheck = currentSize;
 
         // Keep cleaning until under limit
-        while (currentSize > maxSizeBytes && tracks.length > 0) {
+        while (currentSizeCheck > maxSizeBytes && tracks.length > 0) {
             // Sort by last accessed time (oldest first)
             tracks.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
 
@@ -354,9 +355,9 @@ export class CacheManager {
 
             await this.saveMetadata(metadata);
 
-            // Recalculate size
-            const newSize = await this.getCacheSize();
-            console.log(`[Cache] Batch cleanup complete. Freed ${(batchFreedSize / 1024 / 1024).toFixed(2)} MB. New size: ${(newSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
+            // Recalculate size for next iteration
+            currentSizeCheck = await this.getCacheSize();
+            console.log(`[Cache] Batch cleanup complete. Freed ${(batchFreedSize / 1024 / 1024).toFixed(2)} MB. New size: ${(currentSizeCheck / 1024 / 1024 / 1024).toFixed(2)} GB`);
 
             // Update tracks list for next iteration
             tracks = Object.values(metadata.tracks);
