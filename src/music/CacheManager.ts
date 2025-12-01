@@ -181,6 +181,8 @@ export class CacheManager {
                 '--no-playlist',
                 '--no-check-certificate',
                 '--no-warnings',
+                '--quiet', // Suppress all output
+                '--no-progress', // Disable progress bar
             ];
 
             if (formatOption.extract) {
@@ -194,10 +196,6 @@ export class CacheManager {
             // Optimize for speed
             args.push('--concurrent-fragments', '4'); // Download fragments concurrently
             args.push('--http-chunk-size', '10M'); // Larger chunks
-            
-            // Configure progress output to single line
-            args.push('--progress-template', '[download] %(progress.downloaded_bytes)s/%(progress.total_bytes)s (%(progress._percent_str)s) @ %(progress.speed)s ETA %(progress._eta_str)s');
-            args.push('--newline'); // Use newline for progress updates
 
             if (hasCookies) {
                 args.push('--cookies', cookiesPath);
