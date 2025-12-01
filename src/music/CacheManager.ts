@@ -8,13 +8,6 @@ import { CACHE_CONFIG } from '../config/cache.config';
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
 const cookiesPath = path.join(process.cwd(), 'cookies.txt');
 
-// Type assertion helper for process.stdout.write
-const stdoutWrite = (text: string) => {
-    if (process.stdout && typeof (process.stdout as any).write === 'function') {
-        (process.stdout as any).write(text);
-    }
-};
-
 interface TrackMetadata {
     hash: string;
     videoUrl: string;
@@ -216,7 +209,6 @@ export class CacheManager {
 
             let errorOutput = '';
             let hasStarted = false;
-            let lastProgressLine = '';
             const timeout = setTimeout(() => {
                 if (!hasStarted) {
                     if (!process.killed) process.kill();
@@ -228,24 +220,22 @@ export class CacheManager {
                 const message = data.toString();
                 errorOutput += message;
                 
-                // Process progress lines - show only the latest one
+                // Suppress download progress output - only log errors
                 const lines = message.split('\n');
                 for (const line of lines) {
                     const trimmedLine = line.trim();
+                    // Skip download progress lines completely
                     if (trimmedLine.startsWith('[download]')) {
-                        // Update progress line (overwrite previous using \r)
-                        stdoutWrite(`\r[Cache] ${trimmedLine}`);
-                        lastProgressLine = trimmedLine;
                         hasStarted = true;
+                        continue; // Don't log download progress
                     } else if (trimmedLine && !trimmedLine.startsWith('[download]')) {
-                        // Other messages (errors, warnings, etc.)
+                        // Only log errors and warnings
                         if (trimmedLine.includes('requested format is not available') || 
                             trimmedLine.includes('format not available') ||
                             trimmedLine.includes('No video formats found') ||
                             trimmedLine.includes('ERROR')) {
                             // Don't kill immediately, let it try to complete
                             if (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING')) {
-                                stdoutWrite('\n'); // New line before error
                                 console.warn(`[Cache] Error during download: ${trimmedLine.substring(0, 200)}`);
                             }
                         }
@@ -259,11 +249,6 @@ export class CacheManager {
 
             process.on('close', async (code) => {
                 clearTimeout(timeout);
-                
-                // Clear progress line and add newline
-                if (lastProgressLine) {
-                    stdoutWrite('\r' + ' '.repeat(100) + '\r');
-                }
                 
                 if (code === 0) {
                     try {

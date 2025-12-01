@@ -43,7 +43,20 @@ export class BotClient extends Client {
             } else if (file.endsWith('.ts') || file.endsWith('.js')) {
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
                 const commandModule = require(filePath);
-                const command: Command = commandModule.default || commandModule;
+                
+                // Support both default export and named exports (data + execute)
+                let command: Command;
+                if (commandModule.default && 'data' in commandModule.default) {
+                    command = commandModule.default;
+                } else if ('data' in commandModule && 'execute' in commandModule) {
+                    command = {
+                        data: commandModule.data,
+                        execute: commandModule.execute
+                    };
+                } else {
+                    Logger.warn(`The command at ${filePath} is missing a required "data" or "execute" property.`);
+                    return;
+                }
 
                 if ('data' in command && 'execute' in command) {
                     this.commands.set(command.data.name, command);
