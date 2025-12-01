@@ -54,8 +54,29 @@ El script `export-cookies.sh` te guiará para:
 **Nota importante:** 
 - Las cookies son necesarias para evitar la detección de bots de YouTube
 - YouTube puede limitar la duración real de las cookies (aunque intentemos extenderlas)
-- **Recomendación:** Renueva las cookies cada 6 meses ejecutando `./export-cookies.sh` nuevamente
+- **Recomendación:** Renueva las cookies cada 3-6 meses ejecutando `./export-cookies.sh` nuevamente
 - Usa `./check-cookies.sh` para verificar cuándo expiran tus cookies actuales
+- Usa `./keep-cookies-alive.sh` para mantener las cookies activas haciendo requests periódicos
+
+**Cómo mantener las cookies vivas:**
+```bash
+# Verificar estado de cookies
+./check-cookies.sh
+
+# Mantener cookies activas (hace requests periódicos a YouTube)
+./keep-cookies-alive.sh
+
+# Opción 1: Request de prueba
+# Opción 2: Modo daemon (ejecuta continuamente)
+# Opción 3: Configurar cron job (automático cada 6 horas)
+```
+
+**Mejores prácticas:**
+- ✅ Renueva cookies cada 3-6 meses
+- ✅ Usa `keep-cookies-alive.sh` para mantenerlas activas
+- ✅ Mantén la misma IP/location cuando sea posible
+- ✅ Evita demasiados requests simultáneos
+- ❌ No compartas tus cookies públicamente
 
 ## 🎮 Uso
 
