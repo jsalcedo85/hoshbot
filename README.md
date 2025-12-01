@@ -60,12 +60,12 @@ Inicia el bot con:
 
 ## 📝 Comandos Disponibles
 
-- `/play <canción>` - Reproduce una canción de YouTube
-- `/skip` - Salta la canción actual
-- `/stop` - Detiene la música y limpia la cola
-- `/pause` - Pausa la música
-- `/resume` - Reanuda la música
-- `/queue` - Ver la cola de música
+- `/play <canción>` - Reproduce una canción de YouTube o agrega a la cola
+- `/skip` - Salta la canción actual y reproduce la siguiente
+- `/stop` - Detiene la música y vacía la cola
+- `/pause` - Pausa la reproducción
+- `/resume` - Reanuda la reproducción pausada
+- `/queue` - Muestra la canción actual y las próximas 5 en la cola
 
 ## ✨ Características
 

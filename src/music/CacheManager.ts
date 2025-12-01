@@ -193,6 +193,10 @@ export class CacheManager {
             // Optimize for speed
             args.push('--concurrent-fragments', '4'); // Download fragments concurrently
             args.push('--http-chunk-size', '10M'); // Larger chunks
+            
+            // Configure progress output to single line
+            args.push('--progress-template', '[download] %(progress.downloaded_bytes)s/%(progress.total_bytes)s (%(progress._percent_str)s) @ %(progress.speed)s ETA %(progress._eta_str)s');
+            args.push('--newline'); // Use newline for progress updates
 
             if (hasCookies) {
                 args.push('--cookies', cookiesPath);
@@ -204,6 +208,7 @@ export class CacheManager {
 
             let errorOutput = '';
             let hasStarted = false;
+            let lastProgressLine = '';
             const timeout = setTimeout(() => {
                 if (!hasStarted) {
                     if (!process.killed) process.kill();
@@ -215,14 +220,26 @@ export class CacheManager {
                 const message = data.toString();
                 errorOutput += message;
                 
-                // Check for format-related errors
-                if (message.includes('requested format is not available') || 
-                    message.includes('format not available') ||
-                    message.includes('No video formats found') ||
-                    message.includes('ERROR')) {
-                    // Don't kill immediately, let it try to complete
-                    if (message.includes('ERROR') && !message.includes('WARNING')) {
-                        console.warn(`[Cache] Error during download: ${message.substring(0, 200)}`);
+                // Process progress lines - show only the latest one
+                const lines = message.split('\n');
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine.startsWith('[download]')) {
+                        // Update progress line (overwrite previous)
+                        process.stdout?.write(`\r${trimmedLine}`);
+                        lastProgressLine = trimmedLine;
+                        hasStarted = true;
+                    } else if (trimmedLine && !trimmedLine.startsWith('[download]')) {
+                        // Other messages (errors, warnings, etc.)
+                        if (trimmedLine.includes('requested format is not available') || 
+                            trimmedLine.includes('format not available') ||
+                            trimmedLine.includes('No video formats found') ||
+                            trimmedLine.includes('ERROR')) {
+                            // Don't kill immediately, let it try to complete
+                            if (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING')) {
+                                console.warn(`\n[Cache] Error during download: ${trimmedLine.substring(0, 200)}`);
+                            }
+                        }
                     }
                 }
             });
@@ -233,6 +250,11 @@ export class CacheManager {
 
             process.on('close', async (code) => {
                 clearTimeout(timeout);
+                
+                // Clear progress line and add newline
+                if (lastProgressLine) {
+                    process.stdout.write('\r' + ' '.repeat(100) + '\r');
+                }
                 
                 if (code === 0) {
                     try {
