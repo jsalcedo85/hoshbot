@@ -107,8 +107,9 @@ export class CacheManager {
 
     /**
      * Download track with multiple format fallbacks and save to cache
+     * @param lowPriority If true, uses fewer resources to avoid interfering with playback
      */
-    public async downloadTrack(videoUrl: string, title: string): Promise<string> {
+    public async downloadTrack(videoUrl: string, title: string, lowPriority: boolean = false): Promise<string> {
         const hash = this.hashUrl(videoUrl);
         const filePath = path.join(this.tracksDir, `${hash}.mp3`);
 
@@ -131,7 +132,7 @@ export class CacheManager {
 
         for (let i = 0; i < formatOptions.length; i++) {
             try {
-                return await this.tryDownloadFormat(videoUrl, title, hash, filePath, formatOptions[i], hasCookies);
+                return await this.tryDownloadFormat(videoUrl, title, hash, filePath, formatOptions[i], hasCookies, lowPriority);
             } catch (error: any) {
                 const isLastAttempt = i === formatOptions.length - 1;
                 if (isLastAttempt) {
@@ -172,7 +173,8 @@ export class CacheManager {
         hash: string,
         filePath: string,
         formatOption: { extract: boolean; format: string; quality: string },
-        hasCookies: boolean
+        hasCookies: boolean,
+        lowPriority: boolean = false
     ): Promise<string> {
         return new Promise((resolve, reject) => {
             // Build yt-dlp arguments optimized for download speed
@@ -193,9 +195,17 @@ export class CacheManager {
                 args.push('-f', formatOption.format);
             }
 
-            // Optimize for speed
-            args.push('--concurrent-fragments', '4'); // Download fragments concurrently
-            args.push('--http-chunk-size', '10M'); // Larger chunks
+            // Optimize for speed or low priority
+            if (lowPriority) {
+                // Low priority: use fewer resources to avoid interfering with playback
+                args.push('--concurrent-fragments', '1'); // Single fragment at a time
+                args.push('--http-chunk-size', '1M'); // Smaller chunks
+                args.push('--limit-rate', '500K'); // Limit download speed
+            } else {
+                // Normal priority: optimize for speed
+                args.push('--concurrent-fragments', '4'); // Download fragments concurrently
+                args.push('--http-chunk-size', '10M'); // Larger chunks
+            }
 
             if (hasCookies) {
                 args.push('--cookies', cookiesPath);

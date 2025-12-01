@@ -45,24 +45,27 @@ export class BotClient extends Client {
                 const commandModule = require(filePath);
                 
                 // Support both default export and named exports (data + execute)
-                let command: Command;
-                if (commandModule.default && 'data' in commandModule.default) {
+                let command: Command | null = null;
+                
+                // Check for default export first
+                if (commandModule.default && 'data' in commandModule.default && 'execute' in commandModule.default) {
                     command = commandModule.default;
-                } else if ('data' in commandModule && 'execute' in commandModule) {
+                } 
+                // Check for named exports (data + execute)
+                else if ('data' in commandModule && 'execute' in commandModule) {
                     command = {
                         data: commandModule.data,
                         execute: commandModule.execute
                     };
-                } else {
-                    Logger.warn(`The command at ${filePath} is missing a required "data" or "execute" property.`);
-                    return;
                 }
-
-                if ('data' in command && 'execute' in command) {
-                    this.commands.set(command.data.name, command);
-                    Logger.log(`Loaded command: ${command.data.name}`);
+                
+                if (command && 'data' in command && 'execute' in command) {
+                    const commandName = command.data.name;
+                    this.commands.set(commandName, command);
+                    Logger.log(`Loaded command: ${commandName}`);
                 } else {
                     Logger.warn(`The command at ${filePath} is missing a required "data" or "execute" property.`);
+                    Logger.warn(`Available exports: ${Object.keys(commandModule).join(', ')}`);
                 }
             }
         }

@@ -38,8 +38,9 @@ export class Track {
      * This allows subsequent plays to use cached file for instant playback.
      */
     public preload(): void {
-        // Download track to cache in background (non-blocking)
-        cacheManager.downloadTrack(this.url, this.title)
+        // Download track to cache in background (non-blocking, low priority)
+        // Use lowPriority=true to avoid interfering with current playback
+        cacheManager.downloadTrack(this.url, this.title, true)
             .then((filePath) => {
                 console.log(`[Preload] Successfully cached: ${this.title}`);
             })
