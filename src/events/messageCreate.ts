@@ -72,7 +72,7 @@ module.exports = {
                     try {
                         await entersState(subscription.voiceConnection, VoiceConnectionStatus.Ready, 20_000);
                     } catch (error) {
-                        Logger.warn(error);
+                        Logger.error('Failed to connect to voice channel:', error);
                         await message.reply('❌ ¡No se pudo conectar al canal de voz en 20 segundos, intenta más tarde!');
                         return;
                     }
@@ -80,14 +80,18 @@ module.exports = {
                     // Create track
                     const track = await Track.from(query, {
                         onStart() {
-                            message.channel.send(`🎵 **Ahora reproduciendo:** ${track.title}`).catch(Logger.warn);
+                            if (message.channel.isTextBased() && !message.channel.isDMBased()) {
+                                message.channel.send(`🎵 **Ahora reproduciendo:** ${track.title}`).catch((err) => Logger.error('Failed to send message:', err));
+                            }
                         },
                         onFinish() {
                             // No-op
                         },
                         onError(error) {
-                            Logger.warn(error);
-                            message.channel.send(`❌ Error: ${error.message}`).catch(Logger.warn);
+                            Logger.error('Track error:', error);
+                            if (message.channel.isTextBased() && !message.channel.isDMBased()) {
+                                message.channel.send(`❌ Error: ${error.message}`).catch((err) => Logger.error('Failed to send error message:', err));
+                            }
                         },
                     });
 
@@ -156,7 +160,7 @@ module.exports = {
             }
         } catch (error) {
             Logger.error(`Error executing command ${commandName}:`, error);
-            await message.reply('❌ Hubo un error al ejecutar el comando.').catch(() => {});
+            await message.reply('❌ Hubo un error al ejecutar el comando.').catch((err) => Logger.error('Failed to send error reply:', err));
         }
     },
 };
