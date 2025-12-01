@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
 import { spawn } from 'child_process';
+import process from 'process';
 import { CACHE_CONFIG } from '../config/cache.config';
 
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
@@ -226,9 +227,7 @@ export class CacheManager {
                     const trimmedLine = line.trim();
                     if (trimmedLine.startsWith('[download]')) {
                         // Update progress line (overwrite previous using \r)
-                        // Use global process.stdout (Node.js main process)
-                        const globalProcess = require('process');
-                        globalProcess.stdout.write(`\r[Cache] ${trimmedLine}`);
+                        process.stdout.write(`\r[Cache] ${trimmedLine}`);
                         lastProgressLine = trimmedLine;
                         hasStarted = true;
                     } else if (trimmedLine && !trimmedLine.startsWith('[download]')) {
@@ -239,8 +238,7 @@ export class CacheManager {
                             trimmedLine.includes('ERROR')) {
                             // Don't kill immediately, let it try to complete
                             if (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING')) {
-                                const globalProcess = require('process');
-                                globalProcess.stdout.write('\n'); // New line before error
+                                process.stdout.write('\n'); // New line before error
                                 console.warn(`[Cache] Error during download: ${trimmedLine.substring(0, 200)}`);
                             }
                         }
@@ -257,8 +255,7 @@ export class CacheManager {
                 
                 // Clear progress line and add newline
                 if (lastProgressLine) {
-                    const globalProcess = require('process');
-                    globalProcess.stdout.write('\r' + ' '.repeat(100) + '\r');
+                    process.stdout.write('\r' + ' '.repeat(100) + '\r');
                 }
                 
                 if (code === 0) {
