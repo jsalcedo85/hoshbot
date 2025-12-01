@@ -204,7 +204,7 @@ export class Track {
             }, 15000); // 15 second timeout
 
             // Process stderr to detect critical errors but suppress [download] progress logs
-            process.stderr?.on('data', (data: Buffer) => {
+            process.stderr?.on('data', (data) => {
                 const message = data.toString();
                 errorOutput += message;
                 
