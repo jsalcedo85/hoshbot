@@ -49,13 +49,30 @@ fi
 
 # 3. Iniciar daemon de cookies en background (si cookies.txt existe)
 COOKIES_DAEMON_PID=""
+COOKIES_LOGGER_PID=""
+LOG_PIPE=""
 if [ -f "cookies.txt" ]; then
     echo "🍪 Iniciando daemon de cookies (cada 30 minutos)..."
     # Crear directorio de logs si no existe
     mkdir -p logs
-    # Ejecutar daemon en background, mostrar logs en consola y también guardarlos
-    node scripts/keep-cookies-daemon.js 2>&1 | tee -a logs/cookies-daemon.log &
+    # Crear named pipe para logs
+    LOG_PIPE=$(mktemp -u)
+    mkfifo "$LOG_PIPE"
+    
+    # Ejecutar daemon en background, redirigir output al pipe
+    node scripts/keep-cookies-daemon.js > "$LOG_PIPE" 2>&1 &
     COOKIES_DAEMON_PID=$!
+    
+    # Proceso que lee del pipe y muestra en consola + guarda en archivo
+    (while IFS= read -r line; do
+        echo "[Cookies Daemon] $line"
+        echo "$line" >> logs/cookies-daemon.log
+    done < "$LOG_PIPE") &
+    COOKIES_LOGGER_PID=$!
+    
+    # Limpiar pipe cuando termine
+    (wait $COOKIES_DAEMON_PID; rm -f "$LOG_PIPE") &
+    
     echo "✅ Daemon de cookies iniciado (PID: $COOKIES_DAEMON_PID)"
     echo "   Los logs se mostrarán aquí y también se guardarán en logs/cookies-daemon.log"
 else
