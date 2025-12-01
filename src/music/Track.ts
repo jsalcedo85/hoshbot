@@ -161,6 +161,8 @@ export class Track {
                 '-o', '-',
                 '--no-playlist',
                 '--no-warnings',
+                '--quiet', // Suppress all output
+                '--no-progress', // Disable progress bar
             ];
 
             if (hasCookies) {
@@ -173,8 +175,9 @@ export class Track {
             args.push(this.url);
             console.log(`[Stream] yt-dlp command: ${ytDlpPath} ${args.join(' ')}`);
 
+            // Spawn process with stderr redirected to suppress download progress logs
             const process = spawn(ytDlpPath, args, {
-                stdio: ['ignore', 'pipe', 'pipe']
+                stdio: ['ignore', 'pipe', 'ignore'] // stdin: ignore, stdout: pipe (for audio), stderr: ignore (suppress progress)
             });
 
             console.log(`[Stream] Spawning yt-dlp process (PID: ${process.pid})`);
