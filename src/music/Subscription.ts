@@ -121,7 +121,7 @@ export class MusicSubscription {
                 const track = (newState.resource as AudioResource<Track>).metadata;
                 const resource = newState.resource as AudioResource<Track>;
                 console.log(`[AudioPlayer] Now Playing: ${track.title}`);
-                console.log(`[AudioPlayer] Resource type: ${resource.inputType || 'unknown'}`);
+                console.log(`[AudioPlayer] Resource type: ${(resource as any).inputType || 'unknown'}`);
                 // Si el estado Playing se alcanzó, entonces una nueva pista ha comenzado a reproducirse.
                 track.onStart();
 
