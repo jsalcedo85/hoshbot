@@ -203,7 +203,10 @@ export class CacheManager {
 
             args.push(videoUrl);
 
-            const process = spawn(ytDlpPath, args);
+            // Spawn process with stdout/stderr redirected to suppress all output
+            const process = spawn(ytDlpPath, args, {
+                stdio: ['ignore', 'ignore', 'pipe'] // stdin: ignore, stdout: ignore (suppress progress), stderr: pipe (only for errors)
+            });
 
             let errorOutput = '';
             let hasStarted = false;
@@ -217,32 +220,25 @@ export class CacheManager {
             process.stderr?.on('data', (data) => {
                 const message = data.toString();
                 errorOutput += message;
+                hasStarted = true; // Mark as started when we get any stderr output
                 
-                // Suppress download progress output - only log errors
+                // Suppress download progress output - only log actual errors
                 const lines = message.split('\n');
                 for (const line of lines) {
                     const trimmedLine = line.trim();
                     // Skip download progress lines completely
                     if (trimmedLine.startsWith('[download]')) {
-                        hasStarted = true;
                         continue; // Don't log download progress
                     } else if (trimmedLine && !trimmedLine.startsWith('[download]')) {
-                        // Only log errors and warnings
+                        // Only log errors and warnings (not progress)
                         if (trimmedLine.includes('requested format is not available') || 
                             trimmedLine.includes('format not available') ||
                             trimmedLine.includes('No video formats found') ||
-                            trimmedLine.includes('ERROR')) {
-                            // Don't kill immediately, let it try to complete
-                            if (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING')) {
-                                console.warn(`[Cache] Error during download: ${trimmedLine.substring(0, 200)}`);
-                            }
+                            (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING'))) {
+                            console.warn(`[Cache] Error during download: ${trimmedLine.substring(0, 200)}`);
                         }
                     }
                 }
-            });
-
-            process.stdout?.on('data', () => {
-                hasStarted = true;
             });
 
             process.on('close', async (code) => {
