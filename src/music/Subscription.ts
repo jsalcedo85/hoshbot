@@ -103,6 +103,14 @@ export class MusicSubscription {
             
             if (newState.status === AudioPlayerStatus.Idle && oldState.status !== AudioPlayerStatus.Idle) {
                 console.log(`[AudioPlayer] Entered Idle state from ${oldState.status}`);
+                
+                // Check if resource ended prematurely
+                if (oldState.status === AudioPlayerStatus.Playing) {
+                    const track = (oldState.resource as AudioResource<Track>).metadata;
+                    console.log(`[AudioPlayer] Track ended: ${track.title}`);
+                    console.log(`[AudioPlayer] Resource ended unexpectedly - may indicate stream issue`);
+                }
+                
                 // If the Idle state is entered from a non-Idle state, it means that an audio resource has finished playing.
                 // The queue is then processed to start playing the next track.
                 if (oldState.resource) {
@@ -110,9 +118,11 @@ export class MusicSubscription {
                 }
                 this.processQueue();
             } else if (newState.status === AudioPlayerStatus.Playing) {
-                console.log(`[AudioPlayer] Now Playing: ${(newState.resource as AudioResource<Track>).metadata.title}`);
+                const track = (newState.resource as AudioResource<Track>).metadata;
+                console.log(`[AudioPlayer] Now Playing: ${track.title}`);
+                console.log(`[AudioPlayer] Resource type: ${newState.resource.inputType}`);
                 // Si el estado Playing se alcanzó, entonces una nueva pista ha comenzado a reproducirse.
-                (newState.resource as AudioResource<Track>).metadata.onStart();
+                track.onStart();
 
                 // Cancelar timer de inactividad al reproducir
                 this.clearIdleTimer();
@@ -121,6 +131,10 @@ export class MusicSubscription {
                 this.checkIfAlone();
             } else if (newState.status === AudioPlayerStatus.Buffering) {
                 console.log(`[AudioPlayer] Buffering audio...`);
+                if (newState.resource) {
+                    const track = (newState.resource as AudioResource<Track>).metadata;
+                    console.log(`[AudioPlayer] Buffering track: ${track.title}`);
+                }
             } else if (newState.status === AudioPlayerStatus.Paused) {
                 console.log(`[AudioPlayer] Paused`);
             }

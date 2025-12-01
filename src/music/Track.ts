@@ -119,7 +119,7 @@ export class Track {
     }
 
     /**
-     * Checks if cookies file exists (cached check)
+     * Checks if cookies file exists and has content (cached check)
      */
     private cookiesChecked: boolean | null = null;
     private async checkCookies(): Promise<boolean> {
@@ -128,10 +128,15 @@ export class Track {
         }
         try {
             await access(cookiesPath);
-            this.cookiesChecked = true;
-            return true;
-        } catch {
+            const fs = require('fs');
+            const stats = fs.statSync(cookiesPath);
+            const hasContent = stats.size > 0;
+            this.cookiesChecked = hasContent;
+            console.log(`[Cookies] File exists: true, Has content: ${hasContent}, Size: ${stats.size} bytes`);
+            return hasContent;
+        } catch (error: any) {
             this.cookiesChecked = false;
+            console.log(`[Cookies] File check failed: ${error.message}`);
             return false;
         }
     }
@@ -141,6 +146,7 @@ export class Track {
      */
     private async tryStreamingFormat(formatSelector: string, hasCookies: boolean): Promise<AudioResource<Track>> {
         return new Promise((resolve, reject) => {
+            let resourceCreated = false;
             console.log(`[Stream] Building yt-dlp arguments for format: ${formatSelector}`);
             // Build yt-dlp arguments - simple and compatible
             const args = [
@@ -189,16 +195,32 @@ export class Track {
             process.stderr?.on('data', (data) => {
                 const message = data.toString();
                 errorOutput += message;
-                console.log(`[Stream] yt-dlp stderr: ${message.substring(0, 200)}`);
+                
+                // Log important messages
+                if (message.includes('ERROR') || message.includes('Sign in to confirm')) {
+                    console.error(`[Stream] yt-dlp ERROR: ${message.substring(0, 300)}`);
+                } else {
+                    console.log(`[Stream] yt-dlp stderr: ${message.substring(0, 200)}`);
+                }
+                
+                // Check for authentication errors
+                if (message.includes('Sign in to confirm') || message.includes('confirm you\'re not a bot')) {
+                    console.error(`[Stream] YouTube authentication error detected`);
+                    console.error(`[Stream] Cookies may be invalid or expired`);
+                    // Don't kill immediately - let it try to stream anyway
+                    // The stream might still work even with this error
+                }
                 
                 // Check for format-related errors
                 if (message.includes('requested format is not available') || 
                     message.includes('format not available') ||
                     message.includes('No video formats found')) {
                     console.error(`[Stream] Format not available error detected`);
-                    if (!process.killed) process.kill();
-                    clearTimeout(timeout);
-                    reject(new Error(`Format not available: ${formatSelector}`));
+                    if (!process.killed && !resourceCreated) {
+                        process.kill();
+                        clearTimeout(timeout);
+                        reject(new Error(`Format not available: ${formatSelector}`));
+                    }
                     return;
                 }
             });
@@ -225,7 +247,9 @@ export class Track {
                             inputType: probe.type,
                             metadata: this,
                         });
+                        resourceCreated = true;
                         console.log(`[Stream] Audio resource created successfully from stream for: ${this.title}`);
+                        console.log(`[Stream] Resource stream is readable: ${probe.stream.readable}`);
                         resolve(resource);
                     })
                     .catch((error) => {
@@ -240,11 +264,22 @@ export class Track {
             
             process.on('close', (code) => {
                 console.log(`[Stream] yt-dlp process closed with code: ${code}`);
-                if (code !== 0 && code !== null && !hasStarted) {
-                    console.error(`[Stream] Process exited with error code ${code} before stream started`);
-                    console.error(`[Stream] Error output: ${errorOutput.substring(0, 500)}`);
-                    clearTimeout(timeout);
-                    reject(new Error(`yt-dlp exited with code ${code}: ${errorOutput.substring(0, 200)}`));
+                if (code !== 0 && code !== null) {
+                    if (!hasStarted) {
+                        console.error(`[Stream] Process exited with error code ${code} before stream started`);
+                        console.error(`[Stream] Error output: ${errorOutput.substring(0, 500)}`);
+                        clearTimeout(timeout);
+                        if (!resourceCreated) {
+                            reject(new Error(`yt-dlp exited with code ${code}: ${errorOutput.substring(0, 200)}`));
+                        }
+                    } else if (!resourceCreated) {
+                        // Stream started but resource wasn't created yet
+                        console.warn(`[Stream] Process exited with code ${code} but resource was being created`);
+                        console.warn(`[Stream] Error output: ${errorOutput.substring(0, 500)}`);
+                    } else {
+                        // Resource was created, process exit is normal (stream ended)
+                        console.log(`[Stream] Process exited normally after resource creation (code: ${code})`);
+                    }
                 } else if (code === 0) {
                     console.log(`[Stream] yt-dlp process exited successfully`);
                 }
