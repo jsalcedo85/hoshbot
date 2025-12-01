@@ -4,8 +4,10 @@ import YouTube from 'youtube-sr';
 import path from 'path';
 import { cacheManager } from './CacheManager';
 import { createReadStream } from 'fs';
+import { access } from 'fs/promises';
 
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
+const cookiesPath = path.join(process.cwd(), 'cookies.txt');
 
 export interface TrackData {
     url: string;
@@ -34,40 +36,58 @@ export class Track {
     }
 
     /**
-     * Pre-loads the audio resource in the background.
+     * Pre-loads the audio resource in the background by downloading to cache.
+     * This doesn't block and allows immediate streaming playback.
      */
     public preload(): void {
-        if (this.cachedResource || this.isPreloading) {
-            return; // Already cached or currently loading
+        if (this.isPreloading) {
+            return; // Already downloading
         }
 
-        this.isPreloading = true;
-        console.log(`[DEBUG] Pre-cargando recurso de audio para: ${this.title}`);
+        // Check if already cached
+        cacheManager.getCachedTrack(this.url)
+            .then(cachedPath => {
+                if (cachedPath) {
+                    console.log(`[Cache] Track already cached: ${this.title}`);
+                    return;
+                }
 
-        this.createAudioResource()
-            .then(resource => {
-                this.cachedResource = resource;
-                this.isPreloading = false;
-                console.log(`[DEBUG] Pre-carga exitosa: ${this.title}`);
+                // Start downloading in background
+                this.isPreloading = true;
+                console.log(`[Cache] Pre-cargando (descargando en background): ${this.title}`);
+
+                cacheManager.downloadTrack(this.url, this.title)
+                    .then(() => {
+                        this.isPreloading = false;
+                        console.log(`[Cache] Pre-carga completada: ${this.title}`);
+                    })
+                    .catch(error => {
+                        this.isPreloading = false;
+                        console.warn(`[Cache] Fallo en pre-carga para ${this.title}:`, error.message);
+                    });
             })
-            .catch(error => {
-                this.isPreloading = false;
-                console.warn(`[DEBUG] Fallo en pre-carga para ${this.title}:`, error.message);
+            .catch(() => {
+                // If check fails, try downloading anyway
+                this.isPreloading = true;
+                console.log(`[Cache] Pre-cargando (descargando en background): ${this.title}`);
+
+                cacheManager.downloadTrack(this.url, this.title)
+                    .then(() => {
+                        this.isPreloading = false;
+                        console.log(`[Cache] Pre-carga completada: ${this.title}`);
+                    })
+                    .catch(error => {
+                        this.isPreloading = false;
+                        console.warn(`[Cache] Fallo en pre-carga para ${this.title}:`, error.message);
+                    });
             });
     }
 
     /**
      * Creates an AudioResource from this Track.
+     * Uses streaming immediately if not cached, and downloads in background for future use.
      */
     public async createAudioResource(): Promise<AudioResource<Track>> {
-        // If we have a cached resource, return it immediately
-        if (this.cachedResource) {
-            console.log(`[DEBUG] Usando recurso en caché para: ${this.title}`);
-            const resource = this.cachedResource;
-            this.cachedResource = null; // Clear cache after use
-            return resource;
-        }
-
         // Check if track exists in local cache
         const cachedPath = await cacheManager.getCachedTrack(this.url);
 
@@ -90,33 +110,36 @@ export class Track {
             });
         }
 
-        // Track not in cache, download it first
-        console.log(`[Cache] Track not in cache, downloading: ${this.title}`);
+        // Track not in cache - use streaming immediately for instant playback
+        console.log(`[Stream] Track not in cache, streaming immediately: ${this.title}`);
 
-        try {
-            const downloadedPath = await cacheManager.downloadTrack(this.url, this.title);
+        // Start downloading in background for future use (don't wait for it)
+        this.downloadInBackground();
 
-            // Now play from the downloaded file
-            return new Promise((resolve, reject) => {
-                const stream = createReadStream(downloadedPath);
+        // Return streaming resource immediately
+        return this.createStreamingResource();
+    }
 
-                demuxProbe(stream)
-                    .then((probe) => {
-                        resolve(
-                            createAudioResource(probe.stream, {
-                                inputType: probe.type,
-                                metadata: this,
-                            }),
-                        );
-                    })
-                    .catch(reject);
-            });
-        } catch (error) {
-            console.error('[Cache] Download failed, falling back to streaming:', error);
-
-            // Fallback to streaming if download fails
-            return this.createStreamingResource();
+    /**
+     * Downloads track in background without blocking playback.
+     */
+    private downloadInBackground(): void {
+        if (this.isPreloading) {
+            return; // Already downloading
         }
+
+        this.isPreloading = true;
+        console.log(`[Cache] Iniciando descarga en background: ${this.title}`);
+
+        cacheManager.downloadTrack(this.url, this.title)
+            .then(() => {
+                this.isPreloading = false;
+                console.log(`[Cache] Descarga en background completada: ${this.title}`);
+            })
+            .catch(error => {
+                this.isPreloading = false;
+                console.warn(`[Cache] Fallo en descarga en background para ${this.title}:`, error.message);
+            });
     }
 
     /**
@@ -125,18 +148,30 @@ export class Track {
     private async createStreamingResource(): Promise<AudioResource<Track>> {
         console.log(`[DEBUG] Streaming audio para URL: ${this.url}`);
 
+        // Build yt-dlp arguments
+        const args = [
+            '-f', 'bestaudio[ext=webm]/bestaudio',
+            '-o', '-',
+            '-q',
+            '--no-warnings',
+            '--no-playlist',
+            '--no-check-certificate',
+            '--prefer-free-formats',
+            '--buffer-size', '16K',
+        ];
+
+        // Add cookies if file exists
+        try {
+            await access(cookiesPath);
+            args.push('--cookies', cookiesPath);
+        } catch {
+            // cookies.txt doesn't exist, continue without it
+        }
+
+        args.push(this.url);
+
         return new Promise((resolve, reject) => {
-            const process = spawn(ytDlpPath, [
-                '-f', 'bestaudio[ext=webm]/bestaudio',
-                '-o', '-',
-                '-q',
-                '--no-warnings',
-                '--no-playlist',
-                '--no-check-certificate',
-                '--prefer-free-formats',
-                '--buffer-size', '16K',
-                this.url
-            ], {
+            const process = spawn(ytDlpPath, args, {
                 stdio: ['ignore', 'pipe', 'pipe']
             });
 

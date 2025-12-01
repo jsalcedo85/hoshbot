@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import { CACHE_CONFIG } from '../config/cache.config';
 
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
+const cookiesPath = path.join(process.cwd(), 'cookies.txt');
 
 interface TrackMetadata {
     hash: string;
@@ -112,16 +113,28 @@ export class CacheManager {
 
         console.log(`[Cache] Downloading track: ${title}`);
 
+        // Build yt-dlp arguments
+        const args = [
+            '-x', // Extract audio
+            '--audio-format', 'mp3',
+            '--audio-quality', '0', // Best quality
+            '-o', filePath,
+            '--no-playlist',
+            '--no-check-certificate',
+        ];
+
+        // Add cookies if file exists
+        try {
+            await fs.access(cookiesPath);
+            args.push('--cookies', cookiesPath);
+        } catch {
+            // cookies.txt doesn't exist, continue without it
+        }
+
+        args.push(videoUrl);
+
         return new Promise((resolve, reject) => {
-            const process = spawn(ytDlpPath, [
-                '-x', // Extract audio
-                '--audio-format', 'mp3',
-                '--audio-quality', '0', // Best quality
-                '-o', filePath,
-                '--no-playlist',
-                '--no-check-certificate',
-                videoUrl
-            ]);
+            const process = spawn(ytDlpPath, args);
 
             let errorOutput = '';
 
