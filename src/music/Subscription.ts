@@ -36,8 +36,9 @@ export class MusicSubscription {
             console.log(`[VoiceConnection] State change: ${oldState.status} -> ${newState.status}`);
             
             if (newState.status === VoiceConnectionStatus.Disconnected) {
-                console.log(`[VoiceConnection] Disconnected. Reason: ${newState.reason}, CloseCode: ${newState.closeCode}`);
-                if (newState.reason === VoiceConnectionDisconnectReason.WebSocketClose && newState.closeCode === 4014) {
+                const closeCode = (newState as any).closeCode;
+                console.log(`[VoiceConnection] Disconnected. Reason: ${newState.reason}, CloseCode: ${closeCode}`);
+                if (newState.reason === VoiceConnectionDisconnectReason.WebSocketClose && closeCode === 4014) {
                     /**
                      * If the WebSocket closed with a 4014 code, this means that we should not manually attempt to reconnect,
                      * but there is a chance the connection will recover itself if the reason of the disconnect was due to
@@ -73,14 +74,11 @@ export class MusicSubscription {
                 // Note: La limpieza del Map se debe hacer desde donde se creó la suscripción
             } else if (newState.status === VoiceConnectionStatus.Ready) {
                 console.log(`[VoiceConnection] Connection ready`);
-            } else if (newState.status === VoiceConnectionStatus.Connecting) {
-                console.log(`[VoiceConnection] Connecting...`);
-            } else if (newState.status === VoiceConnectionStatus.Signalling) {
-                console.log(`[VoiceConnection] Signalling...`);
             } else if (
                 !this.readyLock &&
                 (newState.status === VoiceConnectionStatus.Connecting || newState.status === VoiceConnectionStatus.Signalling)
             ) {
+                console.log(`[VoiceConnection] ${newState.status} - Setting ready lock`);
                 /**
                  * In the Signalling or Connecting states, we set a 20 second time limit for the connection to become ready
                  * before destroying the voice connection. This stops the voice connection permanently existing in one of these
@@ -89,7 +87,9 @@ export class MusicSubscription {
                 this.readyLock = true;
                 try {
                     await entersState(this.voiceConnection, VoiceConnectionStatus.Ready, 20_000);
+                    console.log(`[VoiceConnection] Successfully entered Ready state`);
                 } catch {
+                    console.log(`[VoiceConnection] Failed to enter Ready state within timeout`);
                     if (this.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) this.voiceConnection.destroy();
                 } finally {
                     this.readyLock = false;
