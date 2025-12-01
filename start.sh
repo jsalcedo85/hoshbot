@@ -70,6 +70,12 @@ cleanup() {
         echo "   Deteniendo daemon de cookies (PID: $COOKIES_DAEMON_PID)..."
         kill $COOKIES_DAEMON_PID 2>/dev/null || true
     fi
+    if [ ! -z "$COOKIES_LOGGER_PID" ]; then
+        kill $COOKIES_LOGGER_PID 2>/dev/null || true
+    fi
+    if [ ! -z "$LOG_PIPE" ] && [ -p "$LOG_PIPE" ]; then
+        rm -f "$LOG_PIPE" 2>/dev/null || true
+    fi
     exit 0
 }
 
