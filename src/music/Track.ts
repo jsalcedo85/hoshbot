@@ -88,7 +88,7 @@ export class Track {
      * Uses streaming immediately if not cached, and downloads in background for future use.
      */
     public async createAudioResource(): Promise<AudioResource<Track>> {
-        // Check if track exists in local cache
+        // Check if track exists in local cache (fast path)
         const cachedPath = await cacheManager.getCachedTrack(this.url);
 
         if (cachedPath) {
@@ -106,7 +106,12 @@ export class Track {
                             }),
                         );
                     })
-                    .catch(reject);
+                    .catch((error) => {
+                        console.error(`[Cache] Failed to read cached file, falling back to streaming: ${error.message}`);
+                        // Fallback to streaming if cached file is corrupted
+                        this.downloadInBackground();
+                        this.createStreamingResource().then(resolve).catch(reject);
+                    });
             });
         }
 
@@ -116,8 +121,14 @@ export class Track {
         // Start downloading in background for future use (don't wait for it)
         this.downloadInBackground();
 
-        // Return streaming resource immediately
-        return this.createStreamingResource();
+        // Return streaming resource immediately with error handling
+        try {
+            return await this.createStreamingResource();
+        } catch (error: any) {
+            console.error(`[Stream] Streaming failed: ${error.message}`);
+            // If streaming fails completely, throw error (will be handled by Subscription)
+            throw new Error(`Failed to stream track: ${error.message}`);
+        }
     }
 
     /**
@@ -143,34 +154,81 @@ export class Track {
     }
 
     /**
-     * Creates a streaming audio resource (fallback method)
+     * Creates a streaming audio resource with multiple format fallbacks.
+     * Tries multiple formats to ensure compatibility with all videos.
      */
     private async createStreamingResource(): Promise<AudioResource<Track>> {
-        console.log(`[DEBUG] Streaming audio para URL: ${this.url}`);
+        console.log(`[Stream] Streaming audio para URL: ${this.url}`);
 
-        // Build yt-dlp arguments
-        const args = [
-            '-f', 'bestaudio[ext=webm]/bestaudio',
-            '-o', '-',
-            '-q',
-            '--no-warnings',
-            '--no-playlist',
-            '--no-check-certificate',
-            '--prefer-free-formats',
-            '--buffer-size', '16K',
+        // Multiple format selectors with fallbacks (most compatible first)
+        // Format: bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[height<=480]
+        const formatSelectors = [
+            'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[height<=480]', // Best quality audio, fallback to video if needed
+            'bestaudio/best[height<=480]', // Any audio format, fallback to low-res video
+            'best[height<=480]/worst', // Any format available
         ];
 
-        // Add cookies if file exists
-        try {
-            await access(cookiesPath);
-            args.push('--cookies', cookiesPath);
-        } catch {
-            // cookies.txt doesn't exist, continue without it
+        // Check cookies once
+        const hasCookies = await this.checkCookies();
+
+        // Try each format selector until one works
+        for (let i = 0; i < formatSelectors.length; i++) {
+            try {
+                return await this.tryStreamingFormat(formatSelectors[i], hasCookies);
+            } catch (error: any) {
+                const isLastAttempt = i === formatSelectors.length - 1;
+                if (isLastAttempt) {
+                    console.error(`[Stream] All format attempts failed for: ${this.title}`);
+                    throw new Error(`No compatible format found: ${error.message}`);
+                }
+                console.warn(`[Stream] Format attempt ${i + 1} failed, trying next...`);
+            }
         }
 
-        args.push(this.url);
+        throw new Error('Failed to create streaming resource');
+    }
 
+    /**
+     * Checks if cookies file exists (cached check)
+     */
+    private cookiesChecked: boolean | null = null;
+    private async checkCookies(): Promise<boolean> {
+        if (this.cookiesChecked !== null) {
+            return this.cookiesChecked;
+        }
+        try {
+            await access(cookiesPath);
+            this.cookiesChecked = true;
+            return true;
+        } catch {
+            this.cookiesChecked = false;
+            return false;
+        }
+    }
+
+    /**
+     * Attempts to stream with a specific format selector
+     */
+    private async tryStreamingFormat(formatSelector: string, hasCookies: boolean): Promise<AudioResource<Track>> {
         return new Promise((resolve, reject) => {
+            // Build yt-dlp arguments optimized for speed
+            const args = [
+                '-f', formatSelector,
+                '-o', '-',
+                '--no-playlist',
+                '--no-warnings',
+                '--no-check-certificate',
+                '--prefer-free-formats',
+                '--buffer-size', '64K', // Increased buffer for better performance
+                '--http-chunk-size', '10M', // Larger chunks for faster streaming
+            ];
+
+            if (hasCookies) {
+                args.push('--cookies', cookiesPath);
+            }
+
+            args.push(this.url);
+
             const process = spawn(ytDlpPath, args, {
                 stdio: ['ignore', 'pipe', 'pipe']
             });
@@ -181,21 +239,48 @@ export class Track {
             }
 
             const stream = process.stdout;
+            let errorOutput = '';
+            let hasStarted = false;
+            const timeout = setTimeout(() => {
+                if (!hasStarted) {
+                    if (!process.killed) process.kill();
+                    reject(new Error('Stream timeout - format may not be available'));
+                }
+            }, 15000); // 15 second timeout
 
             process.stderr?.on('data', (data) => {
                 const message = data.toString();
-                if (!message.includes('Broken pipe')) {
-                    console.warn(`[yt-dlp stderr]: ${message}`);
+                errorOutput += message;
+                
+                // Check for format-related errors
+                if (message.includes('requested format is not available') || 
+                    message.includes('format not available') ||
+                    message.includes('No video formats found')) {
+                    if (!process.killed) process.kill();
+                    clearTimeout(timeout);
+                    reject(new Error(`Format not available: ${formatSelector}`));
+                    return;
+                }
+                
+                // Ignore common non-critical messages
+                if (!message.includes('Broken pipe') && 
+                    !message.includes('WARNING') && 
+                    !message.includes('ERROR')) {
+                    // Only log actual errors
                 }
             });
 
             const onError = (error: Error) => {
+                clearTimeout(timeout);
                 if (!process.killed) process.kill();
                 stream.resume();
                 reject(error);
             };
 
             process.once('spawn', () => {
+                hasStarted = true;
+                clearTimeout(timeout);
+                
                 demuxProbe(stream)
                     .then((probe) => {
                         resolve(
@@ -205,10 +290,20 @@ export class Track {
                             }),
                         );
                     })
-                    .catch(onError);
+                    .catch((error) => {
+                        // If probe fails, it might be a format issue
+                        reject(new Error(`Failed to probe stream: ${error.message}`));
+                    });
             });
 
             process.on('error', onError);
+            
+            process.on('close', (code) => {
+                if (code !== 0 && code !== null && !hasStarted) {
+                    clearTimeout(timeout);
+                    reject(new Error(`yt-dlp exited with code ${code}: ${errorOutput.substring(0, 200)}`));
+                }
+            });
         });
     }
 

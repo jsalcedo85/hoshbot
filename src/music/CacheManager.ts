@@ -105,7 +105,7 @@ export class CacheManager {
     }
 
     /**
-     * Download track as MP3 and save to cache
+     * Download track with multiple format fallbacks and save to cache
      */
     public async downloadTrack(videoUrl: string, title: string): Promise<string> {
         const hash = this.hashUrl(videoUrl);
@@ -113,40 +113,136 @@ export class CacheManager {
 
         console.log(`[Cache] Downloading track: ${title}`);
 
-        // Build yt-dlp arguments
-        const args = [
-            '-x', // Extract audio
-            '--audio-format', 'mp3',
-            '--audio-quality', '0', // Best quality
-            '-o', filePath,
-            '--no-playlist',
-            '--no-check-certificate',
+        // Check cookies once
+        const hasCookies = await this.checkCookies();
+
+        // Try multiple audio format options with fallbacks
+        const formatOptions = [
+            // Option 1: Extract audio to MP3 (best quality)
+            { extract: true, format: 'mp3', quality: '0' },
+            // Option 2: Extract audio to MP3 (any quality)
+            { extract: true, format: 'mp3', quality: '5' },
+            // Option 3: Extract audio to any format, convert to MP3
+            { extract: true, format: 'best', quality: '0' },
+            // Option 4: Download best audio and let ffmpeg handle conversion
+            { extract: true, format: 'bestaudio', quality: '0' },
         ];
 
-        // Add cookies if file exists
-        try {
-            await fs.access(cookiesPath);
-            args.push('--cookies', cookiesPath);
-        } catch {
-            // cookies.txt doesn't exist, continue without it
+        for (let i = 0; i < formatOptions.length; i++) {
+            try {
+                return await this.tryDownloadFormat(videoUrl, title, hash, filePath, formatOptions[i], hasCookies);
+            } catch (error: any) {
+                const isLastAttempt = i === formatOptions.length - 1;
+                if (isLastAttempt) {
+                    console.error(`[Cache] All download format attempts failed for: ${title}`);
+                    throw new Error(`Failed to download: ${error.message}`);
+                }
+                console.warn(`[Cache] Download format attempt ${i + 1} failed, trying next...`);
+            }
         }
 
-        args.push(videoUrl);
+        throw new Error('Failed to download track with any available format');
+    }
 
+    /**
+     * Checks if cookies file exists (cached check)
+     */
+    private cookiesChecked: boolean | null = null;
+    private async checkCookies(): Promise<boolean> {
+        if (this.cookiesChecked !== null) {
+            return this.cookiesChecked;
+        }
+        try {
+            await fs.access(cookiesPath);
+            this.cookiesChecked = true;
+            return true;
+        } catch {
+            this.cookiesChecked = false;
+            return false;
+        }
+    }
+
+    /**
+     * Attempts to download with a specific format configuration
+     */
+    private async tryDownloadFormat(
+        videoUrl: string,
+        title: string,
+        hash: string,
+        filePath: string,
+        formatOption: { extract: boolean; format: string; quality: string },
+        hasCookies: boolean
+    ): Promise<string> {
         return new Promise((resolve, reject) => {
+            // Build yt-dlp arguments optimized for download speed
+            const args = [
+                '-o', filePath,
+                '--no-playlist',
+                '--no-check-certificate',
+                '--no-warnings',
+                '--extract-flat', 'false',
+            ];
+
+            if (formatOption.extract) {
+                args.push('-x'); // Extract audio
+                args.push('--audio-format', formatOption.format);
+                args.push('--audio-quality', formatOption.quality);
+            } else {
+                args.push('-f', formatOption.format);
+            }
+
+            // Optimize for speed
+            args.push('--concurrent-fragments', '4'); // Download fragments concurrently
+            args.push('--http-chunk-size', '10M'); // Larger chunks
+
+            if (hasCookies) {
+                args.push('--cookies', cookiesPath);
+            }
+
+            args.push(videoUrl);
+
             const process = spawn(ytDlpPath, args);
 
             let errorOutput = '';
+            let hasStarted = false;
+            const timeout = setTimeout(() => {
+                if (!hasStarted) {
+                    if (!process.killed) process.kill();
+                    reject(new Error('Download timeout'));
+                }
+            }, 300000); // 5 minute timeout for downloads
 
             process.stderr?.on('data', (data) => {
-                errorOutput += data.toString();
+                const message = data.toString();
+                errorOutput += message;
+                
+                // Check for format-related errors
+                if (message.includes('requested format is not available') || 
+                    message.includes('format not available') ||
+                    message.includes('No video formats found') ||
+                    message.includes('ERROR')) {
+                    // Don't kill immediately, let it try to complete
+                    if (message.includes('ERROR') && !message.includes('WARNING')) {
+                        console.warn(`[Cache] Error during download: ${message.substring(0, 200)}`);
+                    }
+                }
+            });
+
+            process.stdout?.on('data', () => {
+                hasStarted = true;
             });
 
             process.on('close', async (code) => {
+                clearTimeout(timeout);
+                
                 if (code === 0) {
                     try {
-                        // Get file size
+                        // Verify file exists and has content
                         const stats = await fs.stat(filePath);
+                        if (stats.size === 0) {
+                            reject(new Error('Downloaded file is empty'));
+                            return;
+                        }
 
                         // Save metadata
                         const metadata = await this.loadMetadata();
@@ -164,20 +260,26 @@ export class CacheManager {
 
                         console.log(`[Cache] Download complete: ${title} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
 
-                        // Check and cleanup cache if needed
-                        await this.cleanupCache();
+                        // Check and cleanup cache if needed (don't wait)
+                        this.cleanupCache().catch(err => console.warn('[Cache] Cleanup error:', err));
 
                         resolve(filePath);
-                    } catch (error) {
-                        reject(error);
+                    } catch (error: any) {
+                        reject(new Error(`Failed to save metadata: ${error.message}`));
                     }
                 } else {
-                    console.error(`[Cache] Download failed: ${errorOutput}`);
-                    reject(new Error(`yt-dlp exited with code ${code}`));
+                    // Check if it's a format error
+                    if (errorOutput.includes('format not available') || 
+                        errorOutput.includes('requested format is not available')) {
+                        reject(new Error(`Format not available: ${formatOption.format}`));
+                    } else {
+                        reject(new Error(`yt-dlp exited with code ${code}: ${errorOutput.substring(0, 300)}`));
+                    }
                 }
             });
 
             process.on('error', (error) => {
+                clearTimeout(timeout);
                 reject(error);
             });
         });

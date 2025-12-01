@@ -163,14 +163,28 @@ export class MusicSubscription {
 
         try {
             // Attempt to convert the Track into an AudioResource (i.e. start streaming the video)
-            const resource = await nextTrack.createAudioResource();
+            // Set a timeout to prevent hanging
+            const resourcePromise = nextTrack.createAudioResource();
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error('Timeout creating audio resource')), 30000); // 30 second timeout
+            });
+
+            const resource = await Promise.race([resourcePromise, timeoutPromise]);
             this.audioPlayer.play(resource);
             this.queueLock = false;
         } catch (error) {
             // If an error occurred, try the next item of the queue instead
+            console.error(`[Queue] Error playing track "${nextTrack.title}":`, error);
             nextTrack.onError(error as Error);
             this.queueLock = false;
-            return this.processQueue();
+            
+            // Try next track if available
+            if (this.queue.length > 0) {
+                return this.processQueue();
+            } else {
+                // No more tracks, stop player
+                this.audioPlayer.stop();
+            }
         }
     }
 

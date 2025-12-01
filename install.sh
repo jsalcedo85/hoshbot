@@ -77,13 +77,17 @@ else
     print_warning "yt-dlp ya existe"
 fi
 
-# 4.1. Verificar cookies.txt
-print_step "Verificando cookies.txt..."
+# 4.1. Crear cookies.txt vacío si no existe
+print_step "Configurando cookies.txt..."
 if [ ! -f "cookies.txt" ]; then
-    print_warning "cookies.txt no encontrado. Se recomienda crear este archivo con cookies de YouTube para evitar detección de bots."
-    echo "   Puedes exportar cookies usando una extensión del navegador o yt-dlp --cookies-from-browser"
+    touch cookies.txt
+    print_success "cookies.txt creado (vacío)"
+    print_warning "IMPORTANTE: Agrega tus cookies de YouTube a cookies.txt para evitar detección de bots."
+    echo "   Puedes exportar cookies usando:"
+    echo "   - Extensión del navegador (Get cookies.txt LOCALLY)"
+    echo "   - yt-dlp --cookies-from-browser chrome"
 else
-    print_success "cookies.txt encontrado"
+    print_success "cookies.txt ya existe"
 fi
 
 # 5. Crear archivo .env si no existe
