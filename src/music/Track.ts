@@ -24,8 +24,6 @@ export class Track {
     public readonly onStart: () => void;
     public readonly onFinish: () => void;
     public readonly onError: (error: Error) => void;
-    private cachedResource: AudioResource<Track> | null = null;
-    private isPreloading = false;
 
     private constructor({ url, title, onStart, onFinish, onError }: TrackData) {
         this.url = url;
@@ -36,63 +34,24 @@ export class Track {
     }
 
     /**
-     * Pre-loads the audio resource in the background by downloading to cache.
-     * This doesn't block and allows immediate streaming playback.
+     * Pre-loads check - no-op for streaming-only mode.
+     * Kept for API compatibility but does nothing.
      */
     public preload(): void {
-        if (this.isPreloading) {
-            return; // Already downloading
-        }
-
-        // Check if already cached
-        cacheManager.getCachedTrack(this.url)
-            .then(cachedPath => {
-                if (cachedPath) {
-                    console.log(`[Cache] Track already cached: ${this.title}`);
-                    return;
-                }
-
-                // Start downloading in background
-                this.isPreloading = true;
-                console.log(`[Cache] Pre-cargando (descargando en background): ${this.title}`);
-
-                cacheManager.downloadTrack(this.url, this.title)
-                    .then(() => {
-                        this.isPreloading = false;
-                        console.log(`[Cache] Pre-carga completada: ${this.title}`);
-                    })
-                    .catch(error => {
-                        this.isPreloading = false;
-                        console.warn(`[Cache] Fallo en pre-carga para ${this.title}:`, error.message);
-                    });
-            })
-            .catch(() => {
-                // If check fails, try downloading anyway
-                this.isPreloading = true;
-                console.log(`[Cache] Pre-cargando (descargando en background): ${this.title}`);
-
-                cacheManager.downloadTrack(this.url, this.title)
-                    .then(() => {
-                        this.isPreloading = false;
-                        console.log(`[Cache] Pre-carga completada: ${this.title}`);
-                    })
-                    .catch(error => {
-                        this.isPreloading = false;
-                        console.warn(`[Cache] Fallo en pre-carga para ${this.title}:`, error.message);
-                    });
-            });
+        // Streaming-only mode - no preloading needed
+        // This method is kept for API compatibility but does nothing
     }
 
     /**
      * Creates an AudioResource from this Track.
-     * Uses streaming immediately if not cached, and downloads in background for future use.
+     * Uses streaming only for instant playback.
      */
     public async createAudioResource(): Promise<AudioResource<Track>> {
         // Check if track exists in local cache (fast path)
         const cachedPath = await cacheManager.getCachedTrack(this.url);
 
         if (cachedPath) {
-            // Use cached file
+            // Use cached file if available
             console.log(`[Cache] Playing from cache: ${this.title}`);
             return new Promise((resolve, reject) => {
                 const stream = createReadStream(cachedPath);
@@ -109,17 +68,13 @@ export class Track {
                     .catch((error) => {
                         console.error(`[Cache] Failed to read cached file, falling back to streaming: ${error.message}`);
                         // Fallback to streaming if cached file is corrupted
-                        this.downloadInBackground();
                         this.createStreamingResource().then(resolve).catch(reject);
                     });
             });
         }
 
-        // Track not in cache - use streaming immediately for instant playback
-        console.log(`[Stream] Track not in cache, streaming immediately: ${this.title}`);
-
-        // Start downloading in background for future use (don't wait for it)
-        this.downloadInBackground();
+        // Streaming-only mode - use streaming immediately for instant playback
+        console.log(`[Stream] Streaming: ${this.title}`);
 
         // Return streaming resource immediately with error handling
         try {
@@ -129,28 +84,6 @@ export class Track {
             // If streaming fails completely, throw error (will be handled by Subscription)
             throw new Error(`Failed to stream track: ${error.message}`);
         }
-    }
-
-    /**
-     * Downloads track in background without blocking playback.
-     */
-    private downloadInBackground(): void {
-        if (this.isPreloading) {
-            return; // Already downloading
-        }
-
-        this.isPreloading = true;
-        console.log(`[Cache] Iniciando descarga en background: ${this.title}`);
-
-        cacheManager.downloadTrack(this.url, this.title)
-            .then(() => {
-                this.isPreloading = false;
-                console.log(`[Cache] Descarga en background completada: ${this.title}`);
-            })
-            .catch(error => {
-                this.isPreloading = false;
-                console.warn(`[Cache] Fallo en descarga en background para ${this.title}:`, error.message);
-            });
     }
 
     /**

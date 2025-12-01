@@ -121,9 +121,8 @@ export class MusicSubscription {
         this.clearIdleTimer(); // Cancelar timer de inactividad
         this.queue.push(track);
 
-        // Pre-cargar la canción automáticamente
+        // Preload is no-op in streaming-only mode, but kept for API compatibility
         track.preload();
-        console.log(`[INFO] Pre-cargando: ${track.title}`);
 
         this.processQueue();
     }

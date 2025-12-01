@@ -180,7 +180,6 @@ export class CacheManager {
                 '--no-playlist',
                 '--no-check-certificate',
                 '--no-warnings',
-                '--extract-flat', 'false',
             ];
 
             if (formatOption.extract) {
