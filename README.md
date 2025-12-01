@@ -126,6 +126,8 @@ Inicia el bot con:
 
 **Hoshoria**
 
+G.N y J.M ❤️
+
 ## 📄 Licencia
 
 ISC

@@ -13,7 +13,7 @@ module.exports = {
         // Establecer estado del bot
         client.user?.setPresence({
             activities: [{
-                name: '🚧 En Desarrollo | Por Hoshoria',
+                name: 'v1.0 | Por @hoshoria',
                 type: ActivityType.Playing
             }],
             status: 'online'
