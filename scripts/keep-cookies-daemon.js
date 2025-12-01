@@ -10,8 +10,8 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const COOKIES_PATH = path.join(__dirname, '..', 'cookies.txt');
-const YT_DLP_PATH = path.join(__dirname, '..', 'bin', 'yt-dlp');
+const COOKIES_PATH = path.join(process.cwd(), 'cookies.txt');
+const YT_DLP_PATH = path.join(process.cwd(), 'bin', 'yt-dlp');
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
 const TEST_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
