@@ -98,12 +98,14 @@ export class BotClient extends Client {
 
         try {
             Logger.log(`Started refreshing ${commandData.length} application (/) commands.`);
+            Logger.log(`Commands to register: ${this.commands.map(c => c.data.name).join(', ')}`);
 
             await rest.put(
                 Routes.applicationCommands(config.clientId),
                 { body: commandData },
             );
             Logger.log('Successfully reloaded application (/) commands globally.');
+            Logger.log(`Registered commands: ${commandData.map((c: any) => c.name).join(', ')}`);
         } catch (error) {
             Logger.error('Error refreshing application (/) commands', error);
         }
