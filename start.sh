@@ -4,6 +4,9 @@
 # Compatible con macOS y Linux
 # Desarrollado por Hoshoria
 
+# Limpiar terminal
+clear
+
 # Detectar sistema operativo
 OS="$(uname -s)"
 
