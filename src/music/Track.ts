@@ -87,38 +87,25 @@ export class Track {
     }
 
     /**
-     * Creates a streaming audio resource with multiple format fallbacks.
-     * Tries multiple formats to ensure compatibility with all videos.
+     * Creates a streaming audio resource with simple format selector.
+     * Uses bestaudio/best format which is most compatible.
      */
     private async createStreamingResource(): Promise<AudioResource<Track>> {
         console.log(`[Stream] Streaming audio para URL: ${this.url}`);
 
-        // Multiple format selectors with fallbacks (most compatible first)
-        // Format: bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[height<=480]
-        const formatSelectors = [
-            'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[height<=480]', // Best quality audio, fallback to video if needed
-            'bestaudio/best[height<=480]', // Any audio format, fallback to low-res video
-            'best[height<=480]/worst', // Any format available
-        ];
+        // Simple format selector: best audio available, fallback to best video
+        const formatSelector = 'bestaudio/best';
 
         // Check cookies once
         const hasCookies = await this.checkCookies();
 
-        // Try each format selector until one works
-        for (let i = 0; i < formatSelectors.length; i++) {
-            try {
-                return await this.tryStreamingFormat(formatSelectors[i], hasCookies);
-            } catch (error: any) {
-                const isLastAttempt = i === formatSelectors.length - 1;
-                if (isLastAttempt) {
-                    console.error(`[Stream] All format attempts failed for: ${this.title}`);
-                    throw new Error(`No compatible format found: ${error.message}`);
-                }
-                console.warn(`[Stream] Format attempt ${i + 1} failed, trying next...`);
-            }
+        // Try streaming with simple format
+        try {
+            return await this.tryStreamingFormat(formatSelector, hasCookies);
+        } catch (error: any) {
+            console.error(`[Stream] Streaming failed for: ${this.title}`, error.message);
+            throw new Error(`Failed to stream track: ${error.message}`);
         }
-
-        throw new Error('Failed to create streaming resource');
     }
 
     /**
@@ -144,16 +131,12 @@ export class Track {
      */
     private async tryStreamingFormat(formatSelector: string, hasCookies: boolean): Promise<AudioResource<Track>> {
         return new Promise((resolve, reject) => {
-            // Build yt-dlp arguments optimized for speed
+            // Build yt-dlp arguments - simple and compatible
             const args = [
                 '-f', formatSelector,
                 '-o', '-',
                 '--no-playlist',
                 '--no-warnings',
-                '--no-check-certificate',
-                '--prefer-free-formats',
-                '--buffer-size', '64K', // Increased buffer for better performance
-                '--http-chunk-size', '10M', // Larger chunks for faster streaming
             ];
 
             if (hasCookies) {

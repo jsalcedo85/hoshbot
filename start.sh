@@ -33,4 +33,16 @@ if ! command -v node &> /dev/null; then
 fi
 
 echo "🎵 Starting HoshBot with Node $(node -v)..."
+echo "🧹 Limpiando directorio dist..."
+rm -rf dist
+
+echo "🔨 Compilando proyecto..."
+npm run build
+
+if [ $? -ne 0 ]; then
+    echo "❌ Error: La compilación falló"
+    exit 1
+fi
+
+echo "🚀 Iniciando HoshBot..."
 npm run start
