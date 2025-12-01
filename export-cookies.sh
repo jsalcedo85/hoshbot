@@ -120,10 +120,10 @@ if [ ! -f "cookies.txt" ]; then
     exit 1
 fi
 
-# Extender expiración de cookies a 1 año
-print_step "Extendiendo expiración de cookies a 1 año..."
+# Extender expiración de cookies a máximo permitido (YouTube permite hasta ~1 año)
+print_step "Extendiendo expiración de cookies al máximo permitido..."
 
-# Calcular fecha de expiración (1 año desde ahora)
+# Calcular fecha de expiración (1 año desde ahora, máximo permitido por YouTube)
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
     EXPIRY_DATE=$(date -v+1y +%s)
@@ -138,11 +138,16 @@ print_success "Backup creado: cookies.txt.backup"
 
 # Actualizar expiración en cookies.txt
 # Formato Netscape: domain, flag, path, secure, expiration, name, value
+# Nota: YouTube limita la expiración de cookies, pero podemos intentar extenderlas
 python3 << EOF
 import re
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 
 expiry_timestamp = $EXPIRY_DATE
+current_time = int(time.time())
+updated_count = 0
+session_count = 0
 
 with open('cookies.txt', 'r') as f:
     lines = f.readlines()
@@ -157,8 +162,30 @@ for line in lines:
     # Parse Netscape cookie format
     parts = line.strip().split('\t')
     if len(parts) >= 7:
-        # Update expiration (5th field, index 4)
-        parts[4] = str(expiry_timestamp)
+        original_expiry = parts[4]
+        
+        # Handle session cookies (expiry = 0) - keep them as session cookies
+        if original_expiry == '0' or original_expiry == '':
+            session_count += 1
+            updated_lines.append(line)
+            continue
+        
+        # Only update cookies that haven't expired yet
+        try:
+            original_expiry_int = int(original_expiry)
+            if original_expiry_int > current_time:
+                # Update expiration to maximum allowed (1 year from now)
+                parts[4] = str(expiry_timestamp)
+                updated_count += 1
+            else:
+                # Cookie already expired, try to renew it
+                parts[4] = str(expiry_timestamp)
+                updated_count += 1
+        except ValueError:
+            # Invalid expiry format, try to set it anyway
+            parts[4] = str(expiry_timestamp)
+            updated_count += 1
+        
         updated_lines.append('\t'.join(parts) + '\n')
     else:
         updated_lines.append(line)
@@ -166,12 +193,20 @@ for line in lines:
 with open('cookies.txt', 'w') as f:
     f.writelines(updated_lines)
 
-print("Cookies actualizadas con expiración de 1 año")
+print(f"Cookies actualizadas: {updated_count}")
+if session_count > 0:
+    print(f"Cookies de sesión preservadas: {session_count}")
+print(f"Fecha de expiración configurada: {datetime.fromtimestamp(expiry_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
 EOF
 
 if [ $? -eq 0 ]; then
-    print_success "Cookies actualizadas con expiración de 1 año"
-    print_success "Las cookies expirarán el: $(date -d "@$EXPIRY_DATE" 2>/dev/null || date -r "$EXPIRY_DATE" 2>/dev/null || echo "en 1 año")"
+    print_success "Cookies actualizadas con expiración extendida"
+    EXPIRY_FORMATTED=$(date -d "@$EXPIRY_DATE" 2>/dev/null || date -r "$EXPIRY_DATE" 2>/dev/null || echo "en 1 año")
+    print_success "Las cookies expirarán el: $EXPIRY_FORMATTED"
+    echo ""
+    print_warning "NOTA: YouTube puede limitar la duración real de las cookies."
+    print_warning "Si las cookies expiran antes de tiempo, necesitarás renovarlas ejecutando este script nuevamente."
+    print_warning "Recomendación: Renueva las cookies cada 6 meses para evitar problemas."
 else
     print_error "Error al actualizar cookies"
     # Restaurar backup
