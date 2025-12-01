@@ -32,8 +32,11 @@ export class MusicSubscription {
         this.audioPlayer = createAudioPlayer();
         this.queue = [];
 
-        this.voiceConnection.on('stateChange', async (_, newState) => {
+        this.voiceConnection.on('stateChange', async (oldState, newState) => {
+            console.log(`[VoiceConnection] State change: ${oldState.status} -> ${newState.status}`);
+            
             if (newState.status === VoiceConnectionStatus.Disconnected) {
+                console.log(`[VoiceConnection] Disconnected. Reason: ${newState.reason}, CloseCode: ${newState.closeCode}`);
                 if (newState.reason === VoiceConnectionDisconnectReason.WebSocketClose && newState.closeCode === 4014) {
                     /**
                      * If the WebSocket closed with a 4014 code, this means that we should not manually attempt to reconnect,
@@ -62,10 +65,18 @@ export class MusicSubscription {
                     this.voiceConnection.destroy();
                 }
             } else if (newState.status === VoiceConnectionStatus.Destroyed) {
+                console.log(`[VoiceConnection] Connection destroyed`);
                 /**
                  * Once destroyed, stop the subscription.
                  */
                 this.stop();
+                // Note: La limpieza del Map se debe hacer desde donde se creó la suscripción
+            } else if (newState.status === VoiceConnectionStatus.Ready) {
+                console.log(`[VoiceConnection] Connection ready`);
+            } else if (newState.status === VoiceConnectionStatus.Connecting) {
+                console.log(`[VoiceConnection] Connecting...`);
+            } else if (newState.status === VoiceConnectionStatus.Signalling) {
+                console.log(`[VoiceConnection] Signalling...`);
             } else if (
                 !this.readyLock &&
                 (newState.status === VoiceConnectionStatus.Connecting || newState.status === VoiceConnectionStatus.Signalling)
@@ -88,25 +99,38 @@ export class MusicSubscription {
 
         // Configure audio player
         this.audioPlayer.on('stateChange', (oldState, newState) => {
+            console.log(`[AudioPlayer] State change: ${oldState.status} -> ${newState.status}`);
+            
             if (newState.status === AudioPlayerStatus.Idle && oldState.status !== AudioPlayerStatus.Idle) {
+                console.log(`[AudioPlayer] Entered Idle state from ${oldState.status}`);
                 // If the Idle state is entered from a non-Idle state, it means that an audio resource has finished playing.
                 // The queue is then processed to start playing the next track.
-                (oldState.resource as AudioResource<Track>).metadata.onFinish();
+                if (oldState.resource) {
+                    (oldState.resource as AudioResource<Track>).metadata.onFinish();
+                }
                 this.processQueue();
             } else if (newState.status === AudioPlayerStatus.Playing) {
+                console.log(`[AudioPlayer] Now Playing: ${(newState.resource as AudioResource<Track>).metadata.title}`);
                 // Si el estado Playing se alcanzó, entonces una nueva pista ha comenzado a reproducirse.
                 (newState.resource as AudioResource<Track>).metadata.onStart();
 
                 // Cancelar timer de inactividad al reproducir
                 this.clearIdleTimer();
 
-                // Verificar si el bot está solo
+                // Verificar si el bot está solo (pero no desconectar inmediatamente)
                 this.checkIfAlone();
+            } else if (newState.status === AudioPlayerStatus.Buffering) {
+                console.log(`[AudioPlayer] Buffering audio...`);
+            } else if (newState.status === AudioPlayerStatus.Paused) {
+                console.log(`[AudioPlayer] Paused`);
             }
         });
 
         this.audioPlayer.on('error', (error) => {
-            (error.resource as AudioResource<Track>).metadata.onError(error);
+            console.error(`[AudioPlayer] Error:`, error);
+            if (error.resource) {
+                (error.resource as AudioResource<Track>).metadata.onError(error);
+            }
         });
 
         voiceConnection.subscribe(this.audioPlayer);
@@ -118,8 +142,11 @@ export class MusicSubscription {
      * @param track La pista a agregar a la cola
      */
     public enqueue(track: Track) {
+        console.log(`[Queue] Enqueuing track: ${track.title}`);
+        console.log(`[Queue] Current queue length: ${this.queue.length}`);
         this.clearIdleTimer(); // Cancelar timer de inactividad
         this.queue.push(track);
+        console.log(`[Queue] New queue length: ${this.queue.length}`);
 
         // Preload is no-op in streaming-only mode, but kept for API compatibility
         track.preload();
@@ -131,6 +158,7 @@ export class MusicSubscription {
      * Detiene la reproducción de audio y vacía la cola.
      */
     public stop() {
+        console.log(`[Subscription] Stop called`);
         this.queueLock = true;
         this.queue = [];
         this.clearIdleTimer();
@@ -138,6 +166,7 @@ export class MusicSubscription {
             clearTimeout(this.aloneTimeout);
             this.aloneTimeout = null;
         }
+        console.log(`[Subscription] Stopping audio player`);
         this.audioPlayer.stop(true);
     }
 
@@ -145,10 +174,23 @@ export class MusicSubscription {
      * Intenta reproducir una Pista desde la cola.
      */
     private async processQueue(): Promise<void> {
+        console.log(`[Queue] processQueue called. Lock: ${this.queueLock}, Player status: ${this.audioPlayer.state.status}, Queue length: ${this.queue.length}`);
+        
         // Si la cola está bloqueada (ya procesando), o el reproductor ya está reproduciendo algo, retornar
-        if (this.queueLock || this.audioPlayer.state.status !== AudioPlayerStatus.Idle || this.queue.length === 0) {
+        if (this.queueLock) {
+            console.log(`[Queue] Queue is locked, skipping`);
+            return;
+        }
+        
+        if (this.audioPlayer.state.status !== AudioPlayerStatus.Idle) {
+            console.log(`[Queue] Player is not idle (status: ${this.audioPlayer.state.status}), skipping`);
+            return;
+        }
+        
+        if (this.queue.length === 0) {
+            console.log(`[Queue] Queue is empty, starting idle timer`);
             // Si la cola está vacía y el player está Idle, iniciar timer de inactividad
-            if (this.queue.length === 0 && this.audioPlayer.state.status === AudioPlayerStatus.Idle) {
+            if (this.audioPlayer.state.status === AudioPlayerStatus.Idle) {
                 this.startIdleTimer();
             }
             return;
@@ -156,11 +198,14 @@ export class MusicSubscription {
 
         // Lock the queue to guarantee safe access
         this.queueLock = true;
+        console.log(`[Queue] Lock acquired, processing queue`);
 
         // Take the first item from the queue. This is guaranteed to exist due to the non-empty check above.
         const nextTrack = this.queue.shift()!;
+        console.log(`[Queue] Processing track: ${nextTrack.title}`);
 
         try {
+            console.log(`[Queue] Creating audio resource for: ${nextTrack.title}`);
             // Attempt to convert the Track into an AudioResource (i.e. start streaming the video)
             // Set a timeout to prevent hanging
             const resourcePromise = nextTrack.createAudioResource();
@@ -169,7 +214,10 @@ export class MusicSubscription {
             });
 
             const resource = await Promise.race([resourcePromise, timeoutPromise]);
+            console.log(`[Queue] Audio resource created successfully for: ${nextTrack.title}`);
+            console.log(`[Queue] Playing resource on audio player`);
             this.audioPlayer.play(resource);
+            console.log(`[Queue] Resource played, unlocking queue`);
             this.queueLock = false;
         } catch (error) {
             // If an error occurred, try the next item of the queue instead
@@ -179,8 +227,10 @@ export class MusicSubscription {
             
             // Try next track if available
             if (this.queue.length > 0) {
+                console.log(`[Queue] Trying next track in queue`);
                 return this.processQueue();
             } else {
+                console.log(`[Queue] No more tracks, stopping player`);
                 // No more tracks, stop player
                 this.audioPlayer.stop();
             }
@@ -192,6 +242,7 @@ export class MusicSubscription {
      */
     private clearIdleTimer(): void {
         if (this.idleTimeout) {
+            console.log(`[Timer] Clearing idle timer`);
             clearTimeout(this.idleTimeout);
             this.idleTimeout = null;
         }
@@ -201,10 +252,11 @@ export class MusicSubscription {
      * Inicia el timer de inactividad. Si no hay actividad por 2 minutos, desconecta el bot.
      */
     private startIdleTimer(): void {
+        console.log(`[Timer] Starting idle timer (${this.IDLE_TIME / 1000} seconds)`);
         this.clearIdleTimer();
 
         this.idleTimeout = setTimeout(() => {
-            console.log('[INFO] Desconectando por inactividad (2 minutos sin música)');
+            console.log('[Timer] Idle timeout reached - Desconectando por inactividad (2 minutos sin música)');
             this.voiceConnection.destroy();
         }, this.IDLE_TIME);
     }
@@ -213,23 +265,35 @@ export class MusicSubscription {
      * Verifica si el bot está solo en el canal de voz y maneja la desconexión automática.
      */
     private checkIfAlone(): void {
-        const channel = this.voiceConnection.joinConfig.channelId;
-        if (!channel) return;
+        const channelId = this.voiceConnection.joinConfig.channelId;
+        if (!channelId) {
+            console.log(`[AloneCheck] No channel ID found`);
+            return;
+        }
+
+        console.log(`[AloneCheck] Checking if alone in channel ${channelId}`);
 
         // Limpiar timeout anterior
         if (this.aloneTimeout) {
             clearTimeout(this.aloneTimeout);
             this.aloneTimeout = null;
+            console.log(`[AloneCheck] Cleared previous alone timeout`);
         }
 
-        // Obtener información del canal desde el adaptador
-        const guild = (this.voiceConnection as any).packets?.state?.guild_id;
-        if (!guild) return;
+        // Obtener el guild desde la conexión de voz
+        const guildId = this.voiceConnection.joinConfig.guildId;
+        if (!guildId) {
+            console.log(`[AloneCheck] No guild ID found, skipping check`);
+            return;
+        }
 
-        // Iniciar timer de soledad
-        this.aloneTimeout = setTimeout(() => {
-            console.log('[INFO] Desconectando porque el bot está solo en el canal de voz');
-            this.voiceConnection.destroy();
-        }, this.IDLE_TIME);
+        // Necesitamos acceder al cliente de Discord para obtener el canal
+        // Por ahora, deshabilitamos la verificación de "solo" ya que requiere acceso al cliente
+        // y puede causar falsos positivos. En su lugar, solo usamos el timer de inactividad.
+        console.log(`[AloneCheck] Guild ID: ${guildId}, Channel ID: ${channelId}`);
+        console.log(`[AloneCheck] Alone check disabled - using idle timer instead`);
+        
+        // NO iniciar timer de soledad - esto causaba desconexiones incorrectas
+        // El timer de inactividad ya maneja la desconexión cuando no hay música
     }
 }

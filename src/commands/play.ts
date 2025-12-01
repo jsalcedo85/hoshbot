@@ -33,8 +33,20 @@ export async function execute(
             });
 
             subscription = new MusicSubscription(connection);
-            subscription.voiceConnection.on('error', console.warn);
+            subscription.voiceConnection.on('error', (error) => {
+                console.error(`[VoiceConnection] Error:`, error);
+            });
+            
+            // Limpiar suscripción cuando se destruya la conexión
+            subscription.voiceConnection.on('stateChange', (oldState, newState) => {
+                if (newState.status === VoiceConnectionStatus.Destroyed) {
+                    console.log(`[Play] Connection destroyed, removing subscription for guild ${interaction.guildId}`);
+                    client.subscriptions.delete(interaction.guildId!);
+                }
+            });
+            
             client.subscriptions.set(interaction.guildId!, subscription);
+            console.log(`[Play] Created new subscription for guild ${interaction.guildId}`);
         }
     }
 

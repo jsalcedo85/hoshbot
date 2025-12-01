@@ -47,23 +47,29 @@ export class Track {
      * Uses streaming only for instant playback.
      */
     public async createAudioResource(): Promise<AudioResource<Track>> {
+        console.log(`[Track] createAudioResource called for: ${this.title}`);
+        console.log(`[Track] URL: ${this.url}`);
+        
         // Check if track exists in local cache (fast path)
+        console.log(`[Track] Checking cache for: ${this.url}`);
         const cachedPath = await cacheManager.getCachedTrack(this.url);
 
         if (cachedPath) {
             // Use cached file if available
             console.log(`[Cache] Playing from cache: ${this.title}`);
             return new Promise((resolve, reject) => {
+                console.log(`[Cache] Creating read stream from: ${cachedPath}`);
                 const stream = createReadStream(cachedPath);
 
                 demuxProbe(stream)
                     .then((probe) => {
-                        resolve(
-                            createAudioResource(probe.stream, {
-                                inputType: probe.type,
-                                metadata: this,
-                            }),
-                        );
+                        console.log(`[Cache] Probe successful, type: ${probe.type}`);
+                        const resource = createAudioResource(probe.stream, {
+                            inputType: probe.type,
+                            metadata: this,
+                        });
+                        console.log(`[Cache] Audio resource created from cache`);
+                        resolve(resource);
                     })
                     .catch((error) => {
                         console.error(`[Cache] Failed to read cached file, falling back to streaming: ${error.message}`);
@@ -74,13 +80,17 @@ export class Track {
         }
 
         // Streaming-only mode - use streaming immediately for instant playback
-        console.log(`[Stream] Streaming: ${this.title}`);
+        console.log(`[Stream] Track not in cache, streaming: ${this.title}`);
 
         // Return streaming resource immediately with error handling
         try {
-            return await this.createStreamingResource();
+            console.log(`[Stream] Calling createStreamingResource for: ${this.title}`);
+            const resource = await this.createStreamingResource();
+            console.log(`[Stream] Streaming resource created successfully for: ${this.title}`);
+            return resource;
         } catch (error: any) {
-            console.error(`[Stream] Streaming failed: ${error.message}`);
+            console.error(`[Stream] Streaming failed for ${this.title}: ${error.message}`);
+            console.error(`[Stream] Error stack:`, error.stack);
             // If streaming fails completely, throw error (will be handled by Subscription)
             throw new Error(`Failed to stream track: ${error.message}`);
         }
@@ -131,6 +141,7 @@ export class Track {
      */
     private async tryStreamingFormat(formatSelector: string, hasCookies: boolean): Promise<AudioResource<Track>> {
         return new Promise((resolve, reject) => {
+            console.log(`[Stream] Building yt-dlp arguments for format: ${formatSelector}`);
             // Build yt-dlp arguments - simple and compatible
             const args = [
                 '-f', formatSelector,
@@ -140,16 +151,23 @@ export class Track {
             ];
 
             if (hasCookies) {
+                console.log(`[Stream] Adding cookies: ${cookiesPath}`);
                 args.push('--cookies', cookiesPath);
+            } else {
+                console.log(`[Stream] No cookies file found, proceeding without cookies`);
             }
 
             args.push(this.url);
+            console.log(`[Stream] yt-dlp command: ${ytDlpPath} ${args.join(' ')}`);
 
             const process = spawn(ytDlpPath, args, {
                 stdio: ['ignore', 'pipe', 'pipe']
             });
 
+            console.log(`[Stream] Spawning yt-dlp process (PID: ${process.pid})`);
+
             if (!process.stdout) {
+                console.error(`[Stream] No stdout available from yt-dlp process`);
                 reject(new Error('No stdout from yt-dlp process'));
                 return;
             }
@@ -159,7 +177,11 @@ export class Track {
             let hasStarted = false;
             const timeout = setTimeout(() => {
                 if (!hasStarted) {
-                    if (!process.killed) process.kill();
+                    console.error(`[Stream] Timeout waiting for stream to start`);
+                    if (!process.killed) {
+                        console.log(`[Stream] Killing yt-dlp process due to timeout`);
+                        process.kill();
+                    }
                     reject(new Error('Stream timeout - format may not be available'));
                 }
             }, 15000); // 15 second timeout
@@ -167,26 +189,23 @@ export class Track {
             process.stderr?.on('data', (data) => {
                 const message = data.toString();
                 errorOutput += message;
+                console.log(`[Stream] yt-dlp stderr: ${message.substring(0, 200)}`);
                 
                 // Check for format-related errors
                 if (message.includes('requested format is not available') || 
                     message.includes('format not available') ||
                     message.includes('No video formats found')) {
+                    console.error(`[Stream] Format not available error detected`);
                     if (!process.killed) process.kill();
                     clearTimeout(timeout);
                     reject(new Error(`Format not available: ${formatSelector}`));
                     return;
                 }
-                
-                // Ignore common non-critical messages
-                if (!message.includes('Broken pipe') && 
-                    !message.includes('WARNING') && 
-                    !message.includes('ERROR')) {
-                    // Only log actual errors
-                }
             });
 
             const onError = (error: Error) => {
+                console.error(`[Stream] Process error: ${error.message}`);
+                console.error(`[Stream] Process error stack:`, error.stack);
                 clearTimeout(timeout);
                 if (!process.killed) process.kill();
                 stream.resume();
@@ -194,19 +213,24 @@ export class Track {
             };
 
             process.once('spawn', () => {
+                console.log(`[Stream] yt-dlp process spawned successfully for: ${this.title}`);
                 hasStarted = true;
                 clearTimeout(timeout);
                 
+                console.log(`[Stream] Starting demuxProbe on stream...`);
                 demuxProbe(stream)
                     .then((probe) => {
-                        resolve(
-                            createAudioResource(probe.stream, {
-                                inputType: probe.type,
-                                metadata: this,
-                            }),
-                        );
+                        console.log(`[Stream] Probe successful! Type: ${probe.type}`);
+                        const resource = createAudioResource(probe.stream, {
+                            inputType: probe.type,
+                            metadata: this,
+                        });
+                        console.log(`[Stream] Audio resource created successfully from stream for: ${this.title}`);
+                        resolve(resource);
                     })
                     .catch((error) => {
+                        console.error(`[Stream] Probe failed for ${this.title}: ${error.message}`);
+                        console.error(`[Stream] Probe error stack:`, error.stack);
                         // If probe fails, it might be a format issue
                         reject(new Error(`Failed to probe stream: ${error.message}`));
                     });
@@ -215,9 +239,14 @@ export class Track {
             process.on('error', onError);
             
             process.on('close', (code) => {
+                console.log(`[Stream] yt-dlp process closed with code: ${code}`);
                 if (code !== 0 && code !== null && !hasStarted) {
+                    console.error(`[Stream] Process exited with error code ${code} before stream started`);
+                    console.error(`[Stream] Error output: ${errorOutput.substring(0, 500)}`);
                     clearTimeout(timeout);
                     reject(new Error(`yt-dlp exited with code ${code}: ${errorOutput.substring(0, 200)}`));
+                } else if (code === 0) {
+                    console.log(`[Stream] yt-dlp process exited successfully`);
                 }
             });
         });
