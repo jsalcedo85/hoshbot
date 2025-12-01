@@ -228,9 +228,20 @@ if [ $? -eq 0 ]; then
     EXPIRY_FORMATTED=$(date -d "@$EXPIRY_DATE" 2>/dev/null || date -r "$EXPIRY_DATE" 2>/dev/null || echo "en 1 año")
     print_success "Las cookies expirarán el: $EXPIRY_FORMATTED"
     echo ""
-    print_warning "NOTA: YouTube puede limitar la duración real de las cookies."
-    print_warning "Si las cookies expiran antes de tiempo, necesitarás renovarlas ejecutando este script nuevamente."
-    print_warning "Recomendación: Renueva las cookies cada 6 meses para evitar problemas."
+    print_warning "⚠️  IMPORTANTE: Limitaciones de YouTube"
+    echo ""
+    echo "YouTube valida las cookies del lado del servidor y puede invalidarlas"
+    echo "independientemente de la fecha de expiración en el archivo si:"
+    echo "  • Han pasado demasiado tiempo desde que se crearon"
+    echo "  • Detecta cambios de IP/location"
+    echo "  • Detecta actividad sospechosa o uso de bots"
+    echo "  • Las cookies fueron invalidadas por el servidor"
+    echo ""
+    echo "Por lo tanto, aunque el archivo tenga una fecha de expiración lejana,"
+    echo "YouTube puede rechazar las cookies antes de esa fecha."
+    echo ""
+    print_warning "Recomendación: Renueva las cookies cada 3-6 meses ejecutando este script."
+    print_warning "Usa './check-cookies.sh' para verificar el estado de tus cookies."
 else
     print_error "Error al actualizar cookies"
     # Restaurar backup
