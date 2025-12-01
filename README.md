@@ -36,19 +36,26 @@ CLIENT_ID=tu_client_id_aqui
 
 ### 2. Configurar Cookies de YouTube (Recomendado)
 
-Para evitar problemas de autenticación con YouTube, exporta tus cookies con expiración de 1 año:
+Para evitar problemas de autenticación con YouTube, exporta tus cookies:
 
 ```bash
-# Ejecutar script de exportación de cookies
+# Exportar cookies desde navegador
 ./export-cookies.sh
+
+# Verificar estado de las cookies
+./check-cookies.sh
 ```
 
-El script te guiará para:
+El script `export-cookies.sh` te guiará para:
 - Exportar cookies desde Chrome/Chromium/Firefox
 - O usar extensión del navegador
-- Extender la expiración a 1 año automáticamente
+- Extender la expiración al máximo permitido automáticamente
 
-**Nota:** Las cookies son necesarias para evitar la detección de bots de YouTube. Sin cookies válidas, el bot puede fallar al reproducir música.
+**Nota importante:** 
+- Las cookies son necesarias para evitar la detección de bots de YouTube
+- YouTube puede limitar la duración real de las cookies (aunque intentemos extenderlas)
+- **Recomendación:** Renueva las cookies cada 6 meses ejecutando `./export-cookies.sh` nuevamente
+- Usa `./check-cookies.sh` para verificar cuándo expiran tus cookies actuales
 
 ## 🎮 Uso
 
