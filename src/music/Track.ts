@@ -175,9 +175,9 @@ export class Track {
             args.push(this.url);
             console.log(`[Stream] yt-dlp command: ${ytDlpPath} ${args.join(' ')}`);
 
-            // Spawn process with stderr redirected to suppress download progress logs
+            // Spawn process with stderr piped to detect critical errors but suppress progress logs
             const process = spawn(ytDlpPath, args, {
-                stdio: ['ignore', 'pipe', 'ignore'] // stdin: ignore, stdout: pipe (for audio), stderr: ignore (suppress progress)
+                stdio: ['ignore', 'pipe', 'pipe'] // stdin: ignore, stdout: pipe (for audio), stderr: pipe (for error detection)
             });
 
             console.log(`[Stream] Spawning yt-dlp process (PID: ${process.pid})`);
@@ -203,8 +203,55 @@ export class Track {
                 }
             }, 15000); // 15 second timeout
 
-            // stderr is now ignored to suppress download progress logs
-            // Errors will be detected when process exits with non-zero code
+            // Process stderr to detect critical errors but suppress [download] progress logs
+            process.stderr?.on('data', (data: Buffer) => {
+                const message = data.toString();
+                errorOutput += message;
+                
+                // Suppress [download] progress lines completely
+                const lines = message.split('\n');
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    
+                    // Skip download progress lines completely
+                    if (trimmedLine.startsWith('[download]')) {
+                        hasStarted = true;
+                        continue; // Don't log download progress
+                    }
+                    
+                    // Only process critical errors (authentication, format errors)
+                    if (trimmedLine.includes('Sign in to confirm') || trimmedLine.includes('confirm you\'re not a bot')) {
+                        console.error(`[Stream] YouTube authentication error detected`);
+                        console.error(`[Stream] Cookies may be invalid or expired`);
+                        authenticationError = true;
+                        if (!process.killed && !resourceCreated) {
+                            console.error(`[Stream] Rejecting stream due to authentication error`);
+                            process.kill();
+                            clearTimeout(timeout);
+                            reject(new Error('YouTube authentication failed. Please update cookies.txt with valid cookies.'));
+                        }
+                        return;
+                    }
+                    
+                    // Check for format-related errors
+                    if (trimmedLine.includes('requested format is not available') || 
+                        trimmedLine.includes('format not available') ||
+                        trimmedLine.includes('No video formats found')) {
+                        console.error(`[Stream] Format not available error detected`);
+                        if (!process.killed && !resourceCreated) {
+                            process.kill();
+                            clearTimeout(timeout);
+                            reject(new Error(`Format not available: ${formatSelector}`));
+                        }
+                        return;
+                    }
+                    
+                    // Log other errors (but not progress)
+                    if (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING') && !trimmedLine.startsWith('[download]')) {
+                        console.error(`[Stream] yt-dlp ERROR: ${trimmedLine.substring(0, 300)}`);
+                    }
+                }
+            });
 
             const onError = (error: Error) => {
                 console.error(`[Stream] Process error: ${error.message}`);
