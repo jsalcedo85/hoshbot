@@ -203,43 +203,26 @@ export class CacheManager {
 
             args.push(videoUrl);
 
-            // Spawn process with stdout/stderr redirected to suppress all output
+            // Spawn process with all output redirected to suppress download progress
+            // Use 'ignore' for both stdout and stderr to completely suppress output
             const process = spawn(ytDlpPath, args, {
-                stdio: ['ignore', 'ignore', 'pipe'] // stdin: ignore, stdout: ignore (suppress progress), stderr: pipe (only for errors)
+                stdio: ['ignore', 'ignore', 'ignore'] // stdin, stdout, stderr all ignored
             });
 
             let errorOutput = '';
             let hasStarted = false;
+            
+            // Monitor process to detect when download starts
+            process.on('spawn', () => {
+                hasStarted = true;
+            });
+            
             const timeout = setTimeout(() => {
                 if (!hasStarted) {
                     if (!process.killed) process.kill();
                     reject(new Error('Download timeout'));
                 }
             }, 300000); // 5 minute timeout for downloads
-
-            process.stderr?.on('data', (data) => {
-                const message = data.toString();
-                errorOutput += message;
-                hasStarted = true; // Mark as started when we get any stderr output
-                
-                // Suppress download progress output - only log actual errors
-                const lines = message.split('\n');
-                for (const line of lines) {
-                    const trimmedLine = line.trim();
-                    // Skip download progress lines completely
-                    if (trimmedLine.startsWith('[download]')) {
-                        continue; // Don't log download progress
-                    } else if (trimmedLine && !trimmedLine.startsWith('[download]')) {
-                        // Only log errors and warnings (not progress)
-                        if (trimmedLine.includes('requested format is not available') || 
-                            trimmedLine.includes('format not available') ||
-                            trimmedLine.includes('No video formats found') ||
-                            (trimmedLine.includes('ERROR') && !trimmedLine.includes('WARNING'))) {
-                            console.warn(`[Cache] Error during download: ${trimmedLine.substring(0, 200)}`);
-                        }
-                    }
-                }
-            });
 
             process.on('close', async (code) => {
                 clearTimeout(timeout);
