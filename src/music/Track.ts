@@ -34,12 +34,19 @@ export class Track {
     }
 
     /**
-     * Pre-loads check - no-op for streaming-only mode.
-     * Kept for API compatibility but does nothing.
+     * Pre-loads track by downloading it to cache in the background.
+     * This allows subsequent plays to use cached file for instant playback.
      */
     public preload(): void {
-        // Streaming-only mode - no preloading needed
-        // This method is kept for API compatibility but does nothing
+        // Download track to cache in background (non-blocking)
+        cacheManager.downloadTrack(this.url, this.title)
+            .then((filePath) => {
+                console.log(`[Preload] Successfully cached: ${this.title}`);
+            })
+            .catch((error) => {
+                console.warn(`[Preload] Failed to cache ${this.title}: ${error.message}`);
+                // Don't throw - preload failures shouldn't break playback
+            });
     }
 
     /**
@@ -97,14 +104,14 @@ export class Track {
     }
 
     /**
-     * Creates a streaming audio resource with simple format selector.
-     * Uses bestaudio/best format which is most compatible.
+     * Creates a streaming audio resource with best quality format selector.
+     * Prioritizes high quality audio formats (m4a, webm) before falling back.
      */
     private async createStreamingResource(): Promise<AudioResource<Track>> {
         console.log(`[Stream] Streaming audio para URL: ${this.url}`);
 
-        // Simple format selector: best audio available, fallback to best video
-        const formatSelector = 'bestaudio/best';
+        // Best quality format selector: prefer m4a (usually highest quality), then webm, then any audio, then video
+        const formatSelector = 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best';
 
         // Check cookies once
         const hasCookies = await this.checkCookies();

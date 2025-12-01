@@ -25,12 +25,30 @@ El script `install.sh` instalará:
 
 ## ⚙️ Configuración
 
+### 1. Configurar Discord
+
 Después de la instalación, edita el archivo `.env` con tus credenciales de Discord:
 
 ```env
 DISCORD_TOKEN=tu_token_aqui
 CLIENT_ID=tu_client_id_aqui
 ```
+
+### 2. Configurar Cookies de YouTube (Recomendado)
+
+Para evitar problemas de autenticación con YouTube, exporta tus cookies con expiración de 1 año:
+
+```bash
+# Ejecutar script de exportación de cookies
+./export-cookies.sh
+```
+
+El script te guiará para:
+- Exportar cookies desde Chrome/Chromium/Firefox
+- O usar extensión del navegador
+- Extender la expiración a 1 año automáticamente
+
+**Nota:** Las cookies son necesarias para evitar la detección de bots de YouTube. Sin cookies válidas, el bot puede fallar al reproducir música.
 
 ## 🎮 Uso
 
@@ -52,10 +70,10 @@ Inicia el bot con:
 ## ✨ Características
 
 - 🇪🇸 **100% en Español** - Todos los comandos y mensajes
-- ⚡ **Pre-carga Automática** - Reproducción sin delays entre canciones
+- ⚡ **Pre-carga Automática** - Las canciones en cola se descargan en background mientras se reproduce la primera
+- 🎵 **Alta Calidad** - Reproduce audio en la mejor calidad disponible (m4a/webm)
+- 💾 **Cache Inteligente** - Las canciones se guardan en cache para reproducción instantánea
 - 🧹 **Auto-desconexión** - Se desconecta automáticamente tras 2 min de inactividad
-- 👤 **Detección de Soledad** - Se desconecta si está solo por 2 min
-- 🎵 **Reproducción Instantánea** - Pre-carga todas las canciones en cola
 - 🚧 **En Desarrollo Activo** - Mejoras continuas
 
 ## 🛠️ Tecnologías

@@ -163,8 +163,12 @@ export class MusicSubscription {
         this.queue.push(track);
         console.log(`[Queue] New queue length: ${this.queue.length}`);
 
-        // Preload is no-op in streaming-only mode, but kept for API compatibility
-        track.preload();
+        // Preload track in background for faster playback next time
+        // Only preload if not first track (first track streams immediately)
+        if (this.queue.length > 1 || this.audioPlayer.state.status === AudioPlayerStatus.Playing) {
+            console.log(`[Preload] Starting background download for: ${track.title}`);
+            track.preload();
+        }
 
         this.processQueue();
     }
