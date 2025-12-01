@@ -146,4 +146,6 @@ download-*.js
 music-cache/
 package-lock.json
 cookies.txt
+logs/
+*.log
 *.mp3

@@ -51,9 +51,13 @@ fi
 COOKIES_DAEMON_PID=""
 if [ -f "cookies.txt" ]; then
     echo "🍪 Iniciando daemon de cookies (cada 30 minutos)..."
-    node scripts/keep-cookies-daemon.js > /dev/null 2>&1 &
+    # Crear directorio de logs si no existe
+    mkdir -p logs
+    # Ejecutar daemon en background y guardar logs
+    node scripts/keep-cookies-daemon.js >> logs/cookies-daemon.log 2>&1 &
     COOKIES_DAEMON_PID=$!
     echo "✅ Daemon de cookies iniciado (PID: $COOKIES_DAEMON_PID)"
+    echo "   Logs: logs/cookies-daemon.log"
 else
     echo "⚠️  cookies.txt no encontrado, daemon de cookies no iniciado"
 fi
