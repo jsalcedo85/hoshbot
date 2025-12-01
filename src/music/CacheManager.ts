@@ -8,6 +8,13 @@ import { CACHE_CONFIG } from '../config/cache.config';
 const ytDlpPath = path.join(process.cwd(), 'bin', 'yt-dlp');
 const cookiesPath = path.join(process.cwd(), 'cookies.txt');
 
+// Type assertion helper for process.stdout.write
+const stdoutWrite = (text: string) => {
+    if (process.stdout && typeof (process.stdout as any).write === 'function') {
+        (process.stdout as any).write(text);
+    }
+};
+
 interface TrackMetadata {
     hash: string;
     videoUrl: string;
