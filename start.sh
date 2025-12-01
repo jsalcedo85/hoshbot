@@ -47,5 +47,34 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# 3. Iniciar daemon de cookies en background (si cookies.txt existe)
+COOKIES_DAEMON_PID=""
+if [ -f "cookies.txt" ]; then
+    echo "🍪 Iniciando daemon de cookies (cada 30 minutos)..."
+    node scripts/keep-cookies-daemon.js > /dev/null 2>&1 &
+    COOKIES_DAEMON_PID=$!
+    echo "✅ Daemon de cookies iniciado (PID: $COOKIES_DAEMON_PID)"
+else
+    echo "⚠️  cookies.txt no encontrado, daemon de cookies no iniciado"
+fi
+
+# Función para limpiar procesos al salir
+cleanup() {
+    echo ""
+    echo "🛑 Deteniendo procesos..."
+    if [ ! -z "$COOKIES_DAEMON_PID" ]; then
+        echo "   Deteniendo daemon de cookies (PID: $COOKIES_DAEMON_PID)..."
+        kill $COOKIES_DAEMON_PID 2>/dev/null || true
+    fi
+    exit 0
+}
+
+# Capturar señales de terminación
+trap cleanup SIGINT SIGTERM
+
+# 4. Ejecutar el bot
 echo "🚀 Iniciando HoshBot..."
 npm run start
+
+# Limpiar al salir
+cleanup
