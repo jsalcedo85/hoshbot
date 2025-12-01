@@ -203,44 +203,8 @@ export class Track {
                 }
             }, 15000); // 15 second timeout
 
-            process.stderr?.on('data', (data) => {
-                const message = data.toString();
-                errorOutput += message;
-                
-                // Log important messages
-                if (message.includes('ERROR') || message.includes('Sign in to confirm')) {
-                    console.error(`[Stream] yt-dlp ERROR: ${message.substring(0, 300)}`);
-                } else {
-                    console.log(`[Stream] yt-dlp stderr: ${message.substring(0, 200)}`);
-                }
-                
-                // Check for authentication errors - CRITICAL: reject immediately
-                if (message.includes('Sign in to confirm') || message.includes('confirm you\'re not a bot')) {
-                    console.error(`[Stream] YouTube authentication error detected`);
-                    console.error(`[Stream] Cookies may be invalid or expired`);
-                    authenticationError = true;
-                    if (!process.killed && !resourceCreated) {
-                        console.error(`[Stream] Rejecting stream due to authentication error`);
-                        process.kill();
-                        clearTimeout(timeout);
-                        reject(new Error('YouTube authentication failed. Please update cookies.txt with valid cookies.'));
-                    }
-                    return;
-                }
-                
-                // Check for format-related errors
-                if (message.includes('requested format is not available') || 
-                    message.includes('format not available') ||
-                    message.includes('No video formats found')) {
-                    console.error(`[Stream] Format not available error detected`);
-                    if (!process.killed && !resourceCreated) {
-                        process.kill();
-                        clearTimeout(timeout);
-                        reject(new Error(`Format not available: ${formatSelector}`));
-                    }
-                    return;
-                }
-            });
+            // stderr is now ignored to suppress download progress logs
+            // Errors will be detected when process exits with non-zero code
 
             const onError = (error: Error) => {
                 console.error(`[Stream] Process error: ${error.message}`);
