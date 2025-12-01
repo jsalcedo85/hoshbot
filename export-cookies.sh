@@ -148,6 +148,12 @@ expiry_timestamp = $EXPIRY_DATE
 current_time = int(time.time())
 updated_count = 0
 session_count = 0
+skipped_count = 0
+
+# Important YouTube cookies that should be preserved as-is or have special handling
+# Some cookies like YSC are session cookies and should remain as 0
+# Authentication cookies (LOGIN_INFO, SID, etc.) may have server-side expiration limits
+important_cookies = ['YSC', 'VISITOR_INFO1_LIVE', 'VISITOR_PRIVACY_METADATA']
 
 with open('cookies.txt', 'r') as f:
     lines = f.readlines()
@@ -163,24 +169,36 @@ for line in lines:
     parts = line.strip().split('\t')
     if len(parts) >= 7:
         original_expiry = parts[4]
+        cookie_name = parts[5] if len(parts) > 5 else ''
         
         # Handle session cookies (expiry = 0) - keep them as session cookies
+        # YSC and similar cookies are meant to be session-only
         if original_expiry == '0' or original_expiry == '':
             session_count += 1
             updated_lines.append(line)
             continue
         
-        # Only update cookies that haven't expired yet
+        # For important cookies, be more conservative
+        # Some cookies may have server-side validation that checks expiration
         try:
             original_expiry_int = int(original_expiry)
-            if original_expiry_int > current_time:
-                # Update expiration to maximum allowed (1 year from now)
+            
+            # If cookie is already set far in the future (more than 6 months), 
+            # YouTube may have set it that way intentionally - don't change it
+            if original_expiry_int > current_time + (180 * 24 * 60 * 60):  # 6 months
+                skipped_count += 1
+                updated_lines.append(line)
+                continue
+            
+            # Update expiration for cookies that are expiring soon or expired
+            if original_expiry_int <= current_time + (180 * 24 * 60 * 60):  # 6 months or less
                 parts[4] = str(expiry_timestamp)
                 updated_count += 1
             else:
-                # Cookie already expired, try to renew it
-                parts[4] = str(expiry_timestamp)
-                updated_count += 1
+                # Cookie already has good expiration, keep it
+                skipped_count += 1
+                updated_lines.append(line)
+                continue
         except ValueError:
             # Invalid expiry format, try to set it anyway
             parts[4] = str(expiry_timestamp)
@@ -196,7 +214,13 @@ with open('cookies.txt', 'w') as f:
 print(f"Cookies actualizadas: {updated_count}")
 if session_count > 0:
     print(f"Cookies de sesión preservadas: {session_count}")
+if skipped_count > 0:
+    print(f"Cookies con expiración válida preservadas: {skipped_count}")
 print(f"Fecha de expiración configurada: {datetime.fromtimestamp(expiry_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
+print()
+print("NOTA: Algunas cookies de YouTube (como LOGIN_INFO, SID) pueden tener")
+print("validación del lado del servidor que verifica la expiración real.")
+print("Si las cookies expiran antes de tiempo, YouTube está aplicando sus propios límites.")
 EOF
 
 if [ $? -eq 0 ]; then
