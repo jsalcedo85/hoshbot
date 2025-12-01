@@ -181,6 +181,7 @@ export class Track {
             const stream = process.stdout;
             let errorOutput = '';
             let hasStarted = false;
+            let authenticationError = false;
             const timeout = setTimeout(() => {
                 if (!hasStarted) {
                     console.error(`[Stream] Timeout waiting for stream to start`);
@@ -203,12 +204,18 @@ export class Track {
                     console.log(`[Stream] yt-dlp stderr: ${message.substring(0, 200)}`);
                 }
                 
-                // Check for authentication errors
+                // Check for authentication errors - CRITICAL: reject immediately
                 if (message.includes('Sign in to confirm') || message.includes('confirm you\'re not a bot')) {
                     console.error(`[Stream] YouTube authentication error detected`);
                     console.error(`[Stream] Cookies may be invalid or expired`);
-                    // Don't kill immediately - let it try to stream anyway
-                    // The stream might still work even with this error
+                    authenticationError = true;
+                    if (!process.killed && !resourceCreated) {
+                        console.error(`[Stream] Rejecting stream due to authentication error`);
+                        process.kill();
+                        clearTimeout(timeout);
+                        reject(new Error('YouTube authentication failed. Please update cookies.txt with valid cookies.'));
+                    }
+                    return;
                 }
                 
                 // Check for format-related errors
@@ -239,25 +246,39 @@ export class Track {
                 hasStarted = true;
                 clearTimeout(timeout);
                 
-                console.log(`[Stream] Starting demuxProbe on stream...`);
-                demuxProbe(stream)
-                    .then((probe) => {
-                        console.log(`[Stream] Probe successful! Type: ${probe.type}`);
-                        const resource = createAudioResource(probe.stream, {
-                            inputType: probe.type,
-                            metadata: this,
+                // Wait a bit to check for immediate errors before probing
+                setTimeout(() => {
+                    if (authenticationError) {
+                        console.error(`[Stream] Authentication error detected before probe, aborting`);
+                        return; // Already rejected in stderr handler
+                    }
+                    
+                    console.log(`[Stream] Starting demuxProbe on stream...`);
+                    demuxProbe(stream)
+                        .then((probe) => {
+                            if (authenticationError) {
+                                console.error(`[Stream] Authentication error detected during probe, aborting`);
+                                reject(new Error('YouTube authentication failed. Please update cookies.txt with valid cookies.'));
+                                return;
+                            }
+                            
+                            console.log(`[Stream] Probe successful! Type: ${probe.type}`);
+                            const resource = createAudioResource(probe.stream, {
+                                inputType: probe.type,
+                                metadata: this,
+                            });
+                            resourceCreated = true;
+                            console.log(`[Stream] Audio resource created successfully from stream for: ${this.title}`);
+                            console.log(`[Stream] Resource stream is readable: ${probe.stream.readable}`);
+                            resolve(resource);
+                        })
+                        .catch((error) => {
+                            console.error(`[Stream] Probe failed for ${this.title}: ${error.message}`);
+                            console.error(`[Stream] Probe error stack:`, error.stack);
+                            // If probe fails, it might be a format issue
+                            reject(new Error(`Failed to probe stream: ${error.message}`));
                         });
-                        resourceCreated = true;
-                        console.log(`[Stream] Audio resource created successfully from stream for: ${this.title}`);
-                        console.log(`[Stream] Resource stream is readable: ${probe.stream.readable}`);
-                        resolve(resource);
-                    })
-                    .catch((error) => {
-                        console.error(`[Stream] Probe failed for ${this.title}: ${error.message}`);
-                        console.error(`[Stream] Probe error stack:`, error.stack);
-                        // If probe fails, it might be a format issue
-                        reject(new Error(`Failed to probe stream: ${error.message}`));
-                    });
+                }, 500); // Wait 500ms to catch authentication errors
             });
 
             process.on('error', onError);
