@@ -20,6 +20,10 @@ print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
+print_step() {
+    echo -e "${BLUE}[PASO]${NC} $1"
+}
+
 print_success() {
     echo -e "${GREEN}[✓]${NC} $1"
 }
