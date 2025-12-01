@@ -314,6 +314,7 @@ export class CacheManager {
 
     /**
      * Cleanup old tracks when cache exceeds size limit
+     * Deletes tracks in batches of 10 (oldest first) until under limit
      */
     public async cleanupCache(): Promise<void> {
         const maxSizeBytes = CACHE_CONFIG.maxSizeGB * 1024 * 1024 * 1024;
@@ -325,34 +326,49 @@ export class CacheManager {
             return;
         }
 
-        console.log('[Cache] Cache size exceeded, cleaning up old tracks...');
+        console.log('[Cache] Cache size exceeded, cleaning up old tracks in batches of 10...');
 
         const metadata = await this.loadMetadata();
-        const tracks = Object.values(metadata.tracks);
+        let tracks = Object.values(metadata.tracks);
+        const BATCH_SIZE = 10;
 
-        // Sort by last accessed time (oldest first)
-        tracks.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
+        // Keep cleaning until under limit
+        while (currentSize > maxSizeBytes && tracks.length > 0) {
+            // Sort by last accessed time (oldest first)
+            tracks.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
 
-        let sizeToFree = currentSize - maxSizeBytes;
-        let freedSize = 0;
+            // Delete batch of 10 oldest tracks
+            const batchToDelete = tracks.slice(0, Math.min(BATCH_SIZE, tracks.length));
+            let batchFreedSize = 0;
 
-        for (const track of tracks) {
-            if (freedSize >= sizeToFree) {
-                break;
+            for (const track of batchToDelete) {
+                try {
+                    await fs.unlink(track.filePath);
+                    batchFreedSize += track.fileSizeBytes;
+                    delete metadata.tracks[track.hash];
+                    console.log(`[Cache] Deleted old track: ${track.title} (${(track.fileSizeBytes / 1024 / 1024).toFixed(2)} MB)`);
+                } catch (error) {
+                    console.warn(`[Cache] Failed to delete track: ${track.title}`, error);
+                }
             }
 
-            try {
-                await fs.unlink(track.filePath);
-                freedSize += track.fileSizeBytes;
-                delete metadata.tracks[track.hash];
-                console.log(`[Cache] Deleted old track: ${track.title} (${(track.fileSizeBytes / 1024 / 1024).toFixed(2)} MB)`);
-            } catch (error) {
-                console.warn(`[Cache] Failed to delete track: ${track.title}`, error);
+            await this.saveMetadata(metadata);
+
+            // Recalculate size
+            const newSize = await this.getCacheSize();
+            console.log(`[Cache] Batch cleanup complete. Freed ${(batchFreedSize / 1024 / 1024).toFixed(2)} MB. New size: ${(newSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
+
+            // Update tracks list for next iteration
+            tracks = Object.values(metadata.tracks);
+
+            // Break if we've deleted all tracks (shouldn't happen, but safety check)
+            if (tracks.length === 0) {
+                console.warn('[Cache] All tracks deleted, stopping cleanup');
+                break;
             }
         }
 
-        await this.saveMetadata(metadata);
-        console.log(`[Cache] Cleanup complete. Freed ${(freedSize / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`[Cache] Cleanup complete. Final size: ${(await this.getCacheSize() / 1024 / 1024 / 1024).toFixed(2)} GB`);
     }
 
     /**

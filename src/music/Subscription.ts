@@ -109,6 +109,25 @@ export class MusicSubscription {
                     const track = (oldState.resource as AudioResource<Track>).metadata;
                     console.log(`[AudioPlayer] Track ended: ${track.title}`);
                     console.log(`[AudioPlayer] Resource ended unexpectedly - may indicate stream issue`);
+                    
+                    // Save track to cache after playback (if not already cached)
+                    // Do this in background to avoid blocking
+                    cacheManager.getCachedTrack(track.url).then((cachedPath) => {
+                        if (!cachedPath) {
+                            console.log(`[Cache] Saving track to cache after playback: ${track.title}`);
+                            cacheManager.downloadTrack(track.url, track.title, true) // lowPriority=true
+                                .then(() => {
+                                    console.log(`[Cache] Successfully cached after playback: ${track.title}`);
+                                })
+                                .catch((error) => {
+                                    console.warn(`[Cache] Failed to cache after playback: ${track.title}`, error.message);
+                                });
+                        }
+                    }).catch(() => {
+                        // If check fails, try to cache anyway
+                        cacheManager.downloadTrack(track.url, track.title, true)
+                            .catch(() => {});
+                    });
                 }
                 
                 // If the Idle state is entered from a non-Idle state, it means that an audio resource has finished playing.
