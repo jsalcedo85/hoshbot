@@ -52,7 +52,7 @@ COOKIES_DAEMON_PID=""
 COOKIES_LOGGER_PID=""
 LOG_PIPE=""
 if [ -f "cookies.txt" ]; then
-    echo "🍪 Iniciando daemon de cookies (cada 30 minutos)..."
+    echo "🍪 Iniciando daemon de cookies (cada 3 minutos)..."
     # Crear directorio de logs si no existe
     mkdir -p logs
     # Crear named pipe para logs

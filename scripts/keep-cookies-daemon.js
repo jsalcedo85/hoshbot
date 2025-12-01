@@ -12,7 +12,7 @@ const fs = require('fs');
 
 const COOKIES_PATH = path.join(process.cwd(), 'cookies.txt');
 const YT_DLP_PATH = path.join(process.cwd(), 'bin', 'yt-dlp');
-const INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
+const INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
 const TEST_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
 let isRunning = true;
@@ -69,7 +69,7 @@ function checkCookies() {
 
 // Función principal
 async function main() {
-    console.log(`[Cookies Daemon] Iniciando daemon de cookies (cada 30 minutos)`);
+    console.log(`[Cookies Daemon] Iniciando daemon de cookies (cada 3 minutos)`);
     console.log(`[Cookies Daemon] Cookies path: ${COOKIES_PATH}`);
     console.log(`[Cookies Daemon] yt-dlp path: ${YT_DLP_PATH}`);
     
