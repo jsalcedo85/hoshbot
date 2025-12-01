@@ -88,12 +88,21 @@ Inicia el bot con:
 
 ## 📝 Comandos Disponibles
 
+### Slash Commands (/) 
 - `/play <canción>` - Reproduce una canción de YouTube o agrega a la cola
 - `/skip` - Salta la canción actual y reproduce la siguiente
 - `/stop` - Detiene la música y vacía la cola
 - `/pause` - Pausa la reproducción
 - `/resume` - Reanuda la reproducción pausada
 - `/queue` - Muestra la canción actual y las próximas 5 en la cola
+
+### Text Commands (h!)
+- `h!play <canción>` - Reproduce una canción de YouTube o agrega a la cola
+- `h!skip` - Salta la canción actual y reproduce la siguiente
+- `h!stop` - Detiene la música y vacía la cola
+- `h!pause` - Pausa la reproducción
+- `h!resume` - Reanuda la reproducción pausada
+- `h!queue` - Muestra la canción actual y las próximas 10 en la cola
 
 ## ✨ Características
 
